@@ -1,0 +1,7 @@
+# Pinned to compatible binary builds — avoids the numpy/pandas/matplotlib
+# "numpy.dtype size changed" ABI break from the old Anaconda environment.
+pandas==2.2.2
+numpy==1.26.4
+matplotlib==3.8.4
+requests==2.32.3
+python-dotenv==1.0.1

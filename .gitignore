@@ -1,0 +1,17 @@
+# Secrets — never commit these
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Notebooks (this project is a clean-Python rebuild; keep them out)
+*.ipynb
+.ipynb_checkpoints/

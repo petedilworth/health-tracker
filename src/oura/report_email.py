@@ -1,25 +1,20 @@
-"""Email the dashboard via Gmail SMTP with the image embedded in the body.
+"""Email the dashboard via Resend, with the image embedded in the body.
 
-Uses an app password (not the account password) over SMTP-SSL. The dashboard
-PNG is attached inline via a Content-ID so it renders in the email body rather
-than as a download.
+Uses a single Resend API key (no SMTP, no app-password flow). The dashboard
+PNG is sent as a base64 attachment with a content_id and referenced from the
+HTML body via `cid:`, so it renders inline rather than as a download.
 """
 
 from __future__ import annotations
 
-import smtplib
-from email.mime.image import MIMEImage
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
+import base64
 from pathlib import Path
 
 import pandas as pd
+import resend
 
 from .config import Settings
 from .viz import METRIC_CONFIG, _fmt_value
-
-SMTP_HOST = "smtp.gmail.com"
-SMTP_PORT = 465  # SSL
 
 
 def _summary_html(df: pd.DataFrame) -> str:
@@ -42,30 +37,29 @@ def send_dashboard_email(settings: Settings, df: pd.DataFrame,
                          image_path: Path) -> None:
     if not settings.email_enabled:
         raise RuntimeError(
-            "Email secrets not configured (MAIL_TO / GMAIL_USER / "
-            "GMAIL_APP_PASSWORD)."
+            "Email not configured (RESEND_API_KEY / MAIL_TO)."
         )
 
     latest_day = pd.to_datetime(df["day"].iloc[-1]).strftime("%A, %d %b %Y")
-    msg = MIMEMultipart("related")
-    msg["Subject"] = f"Oura Sleep Analytics — {latest_day}"
-    msg["From"] = settings.gmail_user
-    msg["To"] = settings.mail_to
-
-    body = (
+    html = (
         f"<h2>Oura Sleep Analytics</h2>"
         f"<p>{latest_day}</p>"
         f"{_summary_html(df)}"
         f'<img src="cid:dashboard" style="max-width:100%;">'
     )
-    msg.attach(MIMEText(body, "html"))
 
     with open(image_path, "rb") as f:
-        img = MIMEImage(f.read())
-    img.add_header("Content-ID", "<dashboard>")
-    img.add_header("Content-Disposition", "inline", filename="dashboard.png")
-    msg.attach(img)
+        image_b64 = base64.b64encode(f.read()).decode("ascii")
 
-    with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT) as server:
-        server.login(settings.gmail_user, settings.gmail_app_password)
-        server.send_message(msg)
+    resend.api_key = settings.resend_api_key
+    resend.Emails.send({
+        "from": settings.mail_from,
+        "to": settings.mail_to,
+        "subject": f"Oura Sleep Analytics — {latest_day}",
+        "html": html,
+        "attachments": [{
+            "filename": "dashboard.png",
+            "content": image_b64,
+            "content_id": "dashboard",
+        }],
+    })

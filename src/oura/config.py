@@ -34,6 +34,9 @@ def _get(name: str, default: str | None = None, required: bool = False) -> str |
     return value
 
 
+DEFAULT_MAIL_FROM = "onboarding@resend.dev"
+
+
 @dataclass(frozen=True)
 class Settings:
     oura_pat: str
@@ -41,12 +44,12 @@ class Settings:
     # Email is optional so the pipeline can run (and commit) even if email
     # secrets aren't configured yet.
     mail_to: str | None
-    gmail_user: str | None
-    gmail_app_password: str | None
+    mail_from: str
+    resend_api_key: str | None
 
     @property
     def email_enabled(self) -> bool:
-        return bool(self.mail_to and self.gmail_user and self.gmail_app_password)
+        return bool(self.mail_to and self.resend_api_key)
 
 
 def load_settings(require_oura: bool = True) -> Settings:
@@ -55,8 +58,8 @@ def load_settings(require_oura: bool = True) -> Settings:
         oura_pat=_get("OURA_PAT", required=require_oura) or "",
         verify_tls=verify_raw not in ("false", "0", "no"),
         mail_to=_get("MAIL_TO"),
-        gmail_user=_get("GMAIL_USER"),
-        gmail_app_password=_get("GMAIL_APP_PASSWORD"),
+        mail_from=_get("MAIL_FROM", DEFAULT_MAIL_FROM) or DEFAULT_MAIL_FROM,
+        resend_api_key=_get("RESEND_API_KEY"),
     )
 
 

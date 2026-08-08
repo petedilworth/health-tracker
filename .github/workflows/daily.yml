@@ -32,8 +32,10 @@ jobs:
         env:
           OURA_PAT: ${{ secrets.OURA_PAT }}
           MAIL_TO: ${{ secrets.MAIL_TO }}
-          GMAIL_USER: ${{ secrets.GMAIL_USER }}
-          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          # Sandbox sender, no domain verification needed. Override by adding
+          # a MAIL_FROM repo secret once you verify your own domain in Resend.
+          MAIL_FROM: ${{ secrets.MAIL_FROM || 'onboarding@resend.dev' }}
         run: python run.py
 
       - name: Commit updated data & dashboard

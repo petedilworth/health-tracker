@@ -32,7 +32,7 @@ src/oura/          # the package
   processing.py    # metrics: rolling averages, percentiles, bedtime decimal
   storage.py       # CSV history with idempotent upsert
   viz.py           # charts -> dashboard PNG
-  report_email.py  # Gmail SMTP send, image embedded in body
+  report_email.py  # Resend send, image embedded in body
   pipeline.py      # orchestrates a full daily run
 scripts/backfill.py  # one-time: seed full history from the API
 run.py               # daily entry point
@@ -53,11 +53,11 @@ Repo → **Settings → Secrets and variables → Actions → New repository sec
 |---|---|
 | `OURA_PAT` | your Oura Personal Access Token |
 | `MAIL_TO` | where the daily email should go |
-| `GMAIL_USER` | the Gmail address that sends it |
-| `GMAIL_APP_PASSWORD` | a Gmail [App Password](https://myaccount.google.com/apppasswords) (needs 2FA on) — **not** your login password |
+| `RESEND_API_KEY` | an API key from [resend.com/api-keys](https://resend.com/api-keys) |
+| `MAIL_FROM` *(optional)* | sender address — defaults to Resend's sandbox address `onboarding@resend.dev` if omitted. Once you verify your own domain in Resend, set this to an address on it (e.g. `alerts@yourdomain.com`) |
 
-(If you skip the three mail secrets, the job still runs and commits data — it
-just skips the email.)
+(If you skip `MAIL_TO` / `RESEND_API_KEY`, the job still runs and commits
+data — it just skips the email.)
 
 ### 3. Seed your history (once, locally)
 ```bash

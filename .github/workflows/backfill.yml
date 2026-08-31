@@ -1,0 +1,72 @@
+name: Backfill history
+
+# Pulls your full Oura history into data/history.csv. Runs here in Actions so
+# you never need Python installed locally.
+on:
+  workflow_dispatch:
+    inputs:
+      start:
+        description: "Start date (YYYY-MM-DD)"
+        required: true
+        default: "2019-01-01"
+      end:
+        description: "End date (YYYY-MM-DD, blank = today)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sleep-data
+  cancel-in-progress: false
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run backfill
+        env:
+          OURA_PAT: ${{ secrets.OURA_PAT }}
+        run: |
+          if [ -z "${{ inputs.end }}" ]; then
+            python scripts/backfill.py --start "${{ inputs.start }}"
+          else
+            python scripts/backfill.py --start "${{ inputs.start }}" --end "${{ inputs.end }}"
+          fi
+
+      - name: Report what landed
+        run: |
+          echo "### Backfill result" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          python - <<'PY' >> $GITHUB_STEP_SUMMARY
+          import pandas as pd
+          df = pd.read_csv("data/history.csv")
+          print(f"Rows: {len(df)}")
+          print(f"Range: {df['day'].min()} -> {df['day'].max()}")
+          print("\nNon-empty values per column:")
+          print(df.notna().sum().to_string())
+          PY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      - name: Commit history
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "data: backfill history ${{ inputs.start }} onward"
+            git push
+          fi

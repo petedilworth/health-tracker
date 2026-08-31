@@ -1,95 +1,114 @@
-# Oura Sleep Analytics
+# Sleep Analytics
 
-A small Python pipeline that pulls [Oura Ring](https://ouraring.com) sleep data,
-computes trend + percentile analytics, renders a dashboard, and emails it — run
-automatically once a day by GitHub Actions.
+Custom analytics on top of [Oura Ring](https://ouraring.com) data — a personal
+sleep score, sleep debt, sleep regularity and readiness, published as a website
+and a daily email, all automated through GitHub Actions.
 
-This is a clean-Python rebuild of an earlier Jupyter notebook project. No
-notebooks required.
+> **Build status: Stage 1 of 4 complete (data layer).**
+> Stage 2 metrics engine, Stage 3 website and Stage 4 email are in progress.
+> The daily job currently pulls and stores data; it does not yet email.
 
-## What it does
+## Why this exists
 
-Each day the job:
+Oura's own sleep score compresses almost every night into a narrow 70–85 band,
+which makes it useless for spotting real change. This rebuild scores each
+component **relative to your own history**, weighted by how reliably the ring can
+actually measure it.
 
-1. Pulls the last ~30 days of Oura data (Personal Access Token auth).
-2. Upserts it into `data/sleep_data_processed.csv` (the full history lives here).
-3. Computes, for **sleep score** and **bedtime**:
-   - daily value, 7-day and 30-day trailing averages
-   - percentile ranks vs. *all* history (today's daily value vs. every daily
-     value; today's 7-day avg vs. every 7-day avg; likewise 30-day)
-4. Renders `images/dashboard.png` (trends, histograms, KPI table).
-5. Commits the updated CSV + PNG back to the repo, and emails the dashboard.
+## Measurement confidence
 
-Bedtime is stored as a decimal hour with a +24 shift after midnight (1:00am =
-25.0), so averaging evening and after-midnight bedtimes works correctly.
+Independent validation against polysomnography (not Oura's marketing) puts the
+signals in three tiers, and that tiering drives both the score weights and how
+the site renders each metric:
+
+| Tier | Metrics | Why |
+|---|---|---|
+| **High** | HR, HRV, respiratory rate, temperature, bedtime, time in bed, total sleep, steps | Direct PPG/thermistor measurement; 94%+ sleep/wake sensitivity |
+| **Moderate** | Efficiency, restfulness | Wake specificity is only 29–52%, so efficiency runs optimistic (+1.75–7.9%) and compresses near the top |
+| **Low** | REM, deep | Four-stage agreement with PSG ~76–79%; directional, not exact |
+
+Sources: [JMIR 11-tracker validation](https://mhealth.jmir.org/2023/1/e50983) ·
+[SLEEP Advances](https://academic.oup.com/sleepadvances/article/6/2/zpaf021/8090472) ·
+[three-wearable accuracy study](https://pmc.ncbi.nlm.nih.gov/articles/PMC11511193/) ·
+[Oura Gen3 OSSA 2.0](https://www.sciencedirect.com/science/article/pii/S1389945724000200)
+
+Because a roughly constant bias cancels out when you compare yourself to
+yourself, every score component is graded against your own baseline rather than
+an absolute target.
+
+## Sleep score weights
+
+| Component | Weight | Confidence |
+|---|---|---|
+| Bedtime, time in bed, timing, HR low, HRV, respiratory rate | 1.0 each | High |
+| Efficiency, restfulness | 0.5 each | Moderate |
+| REM, deep | 0.25 each | Low |
+
+Total weight 7.5, normalised to 0–100. Body temperature is tracked and flagged
+but deliberately kept **out** of the score — it signals illness, not sleep
+quality.
+
+## Running it — everything happens in GitHub Actions
+
+No local Python needed. All three workflows run from the **Actions** tab (and
+from the GitHub mobile app).
+
+| Workflow | What it does |
+|---|---|
+| **Daily Sleep Analytics** | Runs at 13:00 UTC. Pulls the last 30 days and updates `data/history.csv`. |
+| **Backfill history** | One-off. Pulls your entire history (default from 2019-01-01). Run this once. |
+| **Exclude a day** | Removes a bad night (ring not charged, not worn, data error) from every metric. Set `action: include` to restore it. |
+
+### First-time setup
+
+Add these under **Settings → Secrets and variables → Actions**:
+
+| Secret | Value |
+|---|---|
+| `OURA_PAT` | Personal Access Token from [cloud.ouraring.com](https://cloud.ouraring.com/personal-access-tokens) |
+| `MAIL_TO` | Where the daily email goes *(used from Stage 4)* |
+| `RESEND_API_KEY` | API key from [resend.com](https://resend.com/api-keys), sending access *(Stage 4)* |
+| `MAIL_FROM` | *Optional.* Defaults to Resend's sandbox sender. |
+
+Then run **Backfill history** once to seed `data/history.csv`.
+
+## Data model
+
+`data/history.csv` holds one row per day of **raw measurements only**. Rolling
+averages, percentiles and the score are recomputed over full history on every
+run, so they always reflect the current exclusions.
+
+`data/exclusions.csv` lists removed days with a reason and timestamp.
+
+Two conventions worth knowing:
+
+- **Bedtime** is a decimal hour with a +24 shift after midnight (1:00am = 25.0),
+  so averaging an 11pm and a 1am bedtime doesn't produce noon. Local wall-clock
+  time is used, so travel across timezones doesn't distort it.
+- **Naps** are summed into `nap_sleep_h` and never scored — they pay down sleep
+  debt, but efficiency, timing and stage percentages are only meaningful for a
+  consolidated night.
 
 ## Project layout
 
 ```
-src/oura/          # the package
-  config.py        # secret + path loading
-  client.py        # Oura API v2 client (PAT auth, pagination)
-  processing.py    # metrics: rolling averages, percentiles, bedtime decimal
-  storage.py       # CSV history with idempotent upsert
-  viz.py           # charts -> dashboard PNG
-  report_email.py  # Resend send, image embedded in body
-  pipeline.py      # orchestrates a full daily run
-scripts/backfill.py  # one-time: seed full history from the API
-run.py               # daily entry point
-tests/               # unit tests (no network needed)
-.github/workflows/daily.yml
+src/sleep/
+  config.py      # secrets + paths
+  schema.py      # canonical columns + confidence tiers
+  client.py      # Oura API v2 (sleep, daily_sleep, daily_activity, daily_readiness)
+  transform.py   # raw records -> one row per day
+  store.py       # CSV history, idempotent upsert, exclusions
+  ingest.py      # pull -> transform -> upsert orchestration
+scripts/backfill.py, scripts/exclude_day.py
+run.py           # daily entry point
+tests/           # no network required
 ```
 
-## Setup
+## Local development (optional)
 
-### 1. Get an Oura Personal Access Token
-Create one at <https://cloud.ouraring.com/personal-access-tokens>. It's a single
-long-lived token — no OAuth flow to manage.
-
-### 2. Add GitHub repository secrets
-Repo → **Settings → Secrets and variables → Actions → New repository secret**:
-
-| Secret | Value |
-|---|---|
-| `OURA_PAT` | your Oura Personal Access Token |
-| `MAIL_TO` | where the daily email should go |
-| `RESEND_API_KEY` | an API key from [resend.com/api-keys](https://resend.com/api-keys) |
-| `MAIL_FROM` *(optional)* | sender address — defaults to Resend's sandbox address `onboarding@resend.dev` if omitted. Once you verify your own domain in Resend, set this to an address on it (e.g. `alerts@yourdomain.com`) |
-
-(If you skip `MAIL_TO` / `RESEND_API_KEY`, the job still runs and commits
-data — it just skips the email.)
-
-### 3. Seed your history (once, locally)
 ```bash
 python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-cp .env.example .env        # then edit .env with your OURA_PAT
-python scripts/backfill.py  # pulls 2019-01-01 -> today into data/sleep_data_processed.csv
-git add data/ && git commit -m "seed history" && git push
+cp .env.example .env      # add your OURA_PAT
+pytest -q
 ```
-
-### 4. Let it run
-The workflow (`.github/workflows/daily.yml`) runs at **13:00 UTC daily** and can
-also be triggered manually from the **Actions** tab (“Run workflow”).
-
-## Running locally
-
-```bash
-python run.py               # full run: pull, update, render, email
-python run.py --no-email    # skip the email
-python run.py --lookback 60 # re-pull a longer recent window
-```
-
-Behind a corporate network that breaks TLS? Set `OURA_VERIFY_TLS=false` in your
-`.env`. Leave it unset everywhere else (GitHub Actions has clean certs).
-
-## Tests
-
-```bash
-pip install pytest && pytest -q
-```
-
-## Adding more metrics later
-Add the metric to `METRICS` in `processing.py`, map its raw column in
-`storage.RAW_COLUMNS`, and add a `METRIC_CONFIG` entry in `viz.py`. The rolling
-averages, percentiles, histograms, and KPI row are all driven by those lists.

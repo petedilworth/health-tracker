@@ -1,17 +1,16 @@
-name: Daily Oura Analytics
+name: Daily Sleep Analytics
 
 on:
   schedule:
-    # 13:00 UTC ≈ morning in North America — the previous night has synced by then.
+    # 13:00 UTC — the previous night has synced from the ring by then.
     - cron: "0 13 * * *"
-  workflow_dispatch: {}  # allow manual runs from the Actions tab
+  workflow_dispatch: {}
 
-# Needed so the job can commit the updated CSV + dashboard PNG back to the repo.
 permissions:
   contents: write
 
 concurrency:
-  group: daily-oura
+  group: sleep-data
   cancel-in-progress: false
 
 jobs:
@@ -28,24 +27,21 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Run daily pipeline
+      # Stage 1 scope: pull and store. Metrics, site and email land in the
+      # later stages and get wired in here as they arrive.
+      - name: Pull latest data
         env:
           OURA_PAT: ${{ secrets.OURA_PAT }}
-          MAIL_TO: ${{ secrets.MAIL_TO }}
-          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
-          # Sandbox sender, no domain verification needed. Override by adding
-          # a MAIL_FROM repo secret once you verify your own domain in Resend.
-          MAIL_FROM: ${{ secrets.MAIL_FROM || 'onboarding@resend.dev' }}
         run: python run.py
 
-      - name: Commit updated data & dashboard
+      - name: Commit updated data
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/ images/
+          git add data/
           if git diff --cached --quiet; then
             echo "No changes to commit."
           else
-            git commit -m "chore: daily Oura data update ($(date -u +%Y-%m-%d))"
+            git commit -m "data: daily update ($(date -u +%Y-%m-%d))"
             git push
           fi

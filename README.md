@@ -57,7 +57,24 @@ from the GitHub mobile app).
 |---|---|
 | **Daily Sleep Analytics** | Runs at 13:00 UTC. Pulls the last 30 days and updates `data/history.csv`. |
 | **Backfill history** | One-off. Pulls your entire history (default from 2019-01-01). Run this once. |
-| **Exclude a day** | Removes a bad night (ring not charged, not worn, data error) from every metric. Set `action: include` to restore it. |
+| **Anomaly report** | Builds a review queue of suspicious nights into [`docs/review/anomalies.md`](docs/review/anomalies.md), with surrounding nights for context. |
+| **Exclude a day** | Removes bad nights from every metric. Accepts several comma-separated dates. Set `action: include` to restore them. |
+
+## Data quality
+
+Three gates run before any metric is computed:
+
+- **Clamping** — individual readings outside physiological range are nulled
+  (e.g. a +5.28°C temperature deviation). The value is dropped, not the night.
+- **Reliable-start detection** — a metric with a bad early era is truncated from
+  a date derived from the data, not hardcoded. Oura logged almost no steps
+  before 2021, so steps is automatically usable from 2021-02-06 onward; sleep
+  metrics keep full history.
+- **Anomaly review** — suspicious nights are queued for a human decision, never
+  auto-deleted. Daylight-saving clock changes are identified and kept, since
+  only the bedtime→waketime arithmetic is affected, not the recorded duration.
+
+Exclusions live in `data/exclusions.csv` and are always reversible.
 
 ### First-time setup
 

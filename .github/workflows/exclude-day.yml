@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       date:
-        description: "Day to act on (YYYY-MM-DD)"
+        description: "Day(s), YYYY-MM-DD — comma-separated for several"
         required: true
       reason:
         description: "Why (e.g. ring not charged)"

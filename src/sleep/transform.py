@@ -23,8 +23,8 @@ SECONDS_PER_HOUR = 3600.0
 LONG_SLEEP = "long_sleep"
 
 
-def _to_decimal_hour(series: pd.Series) -> pd.Series:
-    """ISO datetime string -> decimal hour, +24 shift for after-midnight times.
+def _wall_clock_hour(series: pd.Series) -> pd.Series:
+    """ISO datetime string -> raw decimal hour of local wall-clock time (0-24).
 
     Oura returns local time with a UTC offset, e.g. '2024-01-01T23:30:00-05:00'.
     "When did I go to bed" is a local-time question, so we take the wall-clock
@@ -35,8 +35,32 @@ def _to_decimal_hour(series: pd.Series) -> pd.Series:
     local = pd.to_datetime(
         series.astype("string").str.slice(0, 19), errors="coerce"
     )
-    hours = local.dt.hour + local.dt.minute / 60 + local.dt.second / 3600
+    return local.dt.hour + local.dt.minute / 60 + local.dt.second / 3600
+
+
+def _bedtime_hour(series: pd.Series) -> pd.Series:
+    """Bedtime as a decimal hour, +24 for after-midnight (1:00am -> 25.0).
+
+    Without the shift, averaging an 11pm bedtime (23.0) with a 1am one (1.0)
+    would wrongly give noon. Noon is the natural split point for *bedtimes*.
+    """
+    hours = _wall_clock_hour(series)
     return hours.where(hours >= 12, hours + 24)
+
+
+def _waketime_hour(wake: pd.Series, bedtime: pd.Series) -> pd.Series:
+    """Waketime on the same axis as bedtime, i.e. always after it.
+
+    The noon rule that works for bedtimes is wrong for waketimes: someone who
+    slept 3:00am -> 12:39pm has a bedtime of 27.0 but a raw waketime of 12.65,
+    which sits on the previous day's axis and makes the span come out at -24h.
+    Anchoring the shift to the bedtime instead of a fixed hour is self-correcting
+    for any sleep pattern, however late or early.
+    """
+    hours = _wall_clock_hour(wake)
+    # Add whole days until waking is after going to bed.
+    shifted = hours.where(hours >= bedtime, hours + 24)
+    return shifted.where(shifted >= bedtime, shifted + 24)
 
 
 def _hours(series: pd.Series) -> pd.Series:
@@ -74,8 +98,8 @@ def sleep_sessions_to_frame(records: list[dict]) -> pd.DataFrame:
         return empty.merge(nap_totals, on="day", how="outer") if not nap_totals.empty else empty
 
     out = pd.DataFrame({"day": nights["day"]})
-    out["bedtime"] = _to_decimal_hour(nights["bedtime_start"])
-    out["waketime"] = _to_decimal_hour(nights["bedtime_end"])
+    out["bedtime"] = _bedtime_hour(nights["bedtime_start"])
+    out["waketime"] = _waketime_hour(nights["bedtime_end"], out["bedtime"])
     out["total_sleep_h"] = _hours(nights.get("total_sleep_duration"))
     out["time_in_bed_h"] = _hours(nights.get("time_in_bed"))
     out["deep_h"] = _hours(nights.get("deep_sleep_duration"))

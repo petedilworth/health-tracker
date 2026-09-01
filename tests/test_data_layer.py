@@ -160,7 +160,8 @@ def test_score_weights_match_plan():
     assert weights["rem_h"] == 0.25 and weights["deep_h"] == 0.25   # low confidence
     assert weights["efficiency"] == 0.5 and weights["restfulness"] == 0.5
     assert weights["hrv"] == 1.0 and weights["hr_low"] == 1.0
-    assert TOTAL_SCORE_WEIGHT == pytest.approx(7.5)
+    assert weights["time_in_bed_h"] == 1.0
+    assert TOTAL_SCORE_WEIGHT == pytest.approx(8.5)
 
 
 def test_every_metric_key_is_a_stored_column():

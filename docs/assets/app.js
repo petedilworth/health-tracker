@@ -9,6 +9,8 @@
     muted: "#898781", grid: "#2c2c2a",
     blue: "#3987e5", aqua: "#199e70", orange: "#d95926", red: "#e66767"
   };
+  var TOUCH = "ontouchstart" in window || navigator.maxTouchPoints > 0;
+  var DEFAULT_DAYS = 120;   // charts open on the last ~4 months
 
   // --- formatters -----------------------------------------------------------
   function fmtClock(v) {
@@ -29,6 +31,32 @@
     int: function (v) { return v == null ? "—" : Math.round(v).toLocaleString(); }
   };
   function fmt(kind, v) { return (FMT[kind] || FMT.f1)(v); }
+
+  function ordinal(p) {
+    if (p == null) return "—";
+    var n = Math.round(p), r = n % 100;
+    var suf = (r >= 11 && r <= 13) ? "th" : ({1: "st", 2: "nd", 3: "rd"})[n % 10] || "th";
+    return n + suf + " percentile";
+  }
+
+  // "38 min later than your median" / "0.4h above your median"
+  function vsMedian(kind, v, med) {
+    if (v == null || med == null) return "";
+    var d = v - med;
+    if (Math.abs(d) < 1e-9) return "right on your median";
+    if (kind === "clock") {
+      var mins = Math.round(Math.abs(d) * 60), h = Math.floor(mins / 60), m = mins % 60;
+      var span = (h ? h + "h " : "") + (m || !h ? m + " min" : "");
+      return span.trim() + (d > 0 ? " later" : " earlier") + " than your median";
+    }
+    var mag;
+    if (kind === "h1") mag = Math.abs(d).toFixed(1) + "h";
+    else if (kind === "pct0") mag = Math.abs(d).toFixed(0) + " pts";
+    else if (kind === "int") mag = Math.round(Math.abs(d)).toLocaleString();
+    else if (kind === "f2s") mag = Math.abs(d).toFixed(2) + "°C";
+    else mag = Math.abs(d).toFixed(kind === "f0" ? 0 : 1);
+    return mag + (d > 0 ? " above" : " below") + " your median";
+  }
 
   function el(id) { return document.getElementById(id); }
   function fetchJSON(path) {
@@ -52,7 +80,7 @@
         bgcolor: "#232322", activecolor: C.page, bordercolor: C.grid,
         borderwidth: 1, font: { color: C.ink2, size: 11 },
         buttons: [
-          { count: 3, label: "3m", step: "month", stepmode: "backward" },
+          { count: 4, label: "4m", step: "month", stepmode: "backward" },
           { count: 1, label: "1y", step: "year", stepmode: "backward" },
           { step: "all", label: "All" }
         ]
@@ -62,7 +90,10 @@
     legend: { orientation: "h", y: 1.06, x: 0, font: { size: 11.5 } },
     showlegend: true
   };
-  var CONFIG = { displayModeBar: false, responsive: true, scrollZoom: false };
+  // scrollZoom is what enables two-finger pinch in Plotly; on desktop it would
+  // hijack the mouse wheel from page scrolling, so it's touch-only.
+  var CONFIG = { displayModeBar: false, responsive: true,
+                 scrollZoom: TOUCH, doubleClick: "reset" };
 
   function clockAxis(values) {
     var lo = Infinity, hi = -Infinity;
@@ -83,6 +114,14 @@
       });
     })(out, b);
     return out;
+  }
+
+  function defaultRange(dates) {
+    if (!dates.length) return null;
+    var end = new Date(dates[dates.length - 1] + "T00:00:00Z");
+    var start = new Date(end.getTime() - DEFAULT_DAYS * 864e5);
+    end = new Date(end.getTime() + 3 * 864e5);
+    return [start.toISOString().slice(0, 10), end.toISOString().slice(0, 10)];
   }
 
   // --- metric page ----------------------------------------------------------
@@ -119,7 +158,7 @@
     }
     if (m.style === "scatter") {
       traces.push({ x: dates, y: v, name: "Nightly", mode: "markers",
-                    marker: { color: C.blue, size: 3.5, opacity: soft ? 0.28 : 0.45 },
+                    marker: { color: C.blue, size: 4, opacity: soft ? 0.3 : 0.5 },
                     customdata: text, hovertemplate: "Nightly %{customdata}<extra></extra>" });
       traces.push({ x: dates, y: a7, name: "7-day", mode: "lines",
                     line: { color: C.aqua, width: 1.8 },
@@ -142,12 +181,12 @@
                       hovertemplate: m.extra_label + " %{customdata}<extra></extra>" });
       }
     }
-    return { traces: traces, yvals: v };
+    return { traces: traces, yvals: v, dates: dates };
   }
 
   function aggTraces(payload, view) {
     var m = payload.meta, rows = payload.agg[view] || [];
-    var dates = col(rows, 0), v = col(rows, 1), n = col(rows, 2);
+    var dates = col(rows, 0), v = col(rows, 1);
     var custom = rows.map(function (r) {
       return fmt(m.format, r[1]) + " · " + r[2] + " nights";
     });
@@ -155,7 +194,7 @@
       traces: [{ x: dates, y: v, name: view, mode: "lines+markers",
                  line: { color: C.blue, width: 2 }, marker: { size: 5, color: C.blue },
                  customdata: custom, hovertemplate: "%{customdata}<extra></extra>" }],
-      yvals: v
+      yvals: v, dates: dates
     };
   }
 
@@ -163,6 +202,11 @@
     var built = view === "daily" ? dailyTraces(payload) : aggTraces(payload, view);
     var layout = deepMerge(BASE_LAYOUT, {});
     if (payload.meta.format === "clock") layout.yaxis = deepMerge(layout.yaxis, clockAxis(built.yvals));
+    // Aggregated views are already sparse; only the daily view opens zoomed in.
+    if (view === "daily") {
+      var r = defaultRange(built.dates);
+      if (r) layout.xaxis.range = r;
+    }
     if (window.innerWidth < 640) {
       delete layout.xaxis.rangeselector;   // too cramped next to the legend
       layout.margin.l = 48;
@@ -171,16 +215,72 @@
   }
 
   function statsHTML(payload) {
-    var m = payload.meta, s = payload.stats || {};
-    function block(lbl, val, pct) {
-      var pctLine = pct == null ? "" :
-        '<div class="pct">better than <b>' + pct.toFixed(0) + "%</b> of nights</div>";
+    var m = payload.meta, s = payload.stats || {}, d = payload.dist || {};
+    function block(lbl, val, pct, extra) {
+      var pctLine = pct == null ? "" : '<div class="pct"><b>' + ordinal(pct) + "</b></div>";
       return '<div class="stat"><div class="lbl">' + lbl + '</div>' +
-             '<div class="val">' + fmt(m.format, val) + "</div>" + pctLine + "</div>";
+             '<div class="val">' + fmt(m.format, val) + "</div>" + pctLine +
+             (extra ? '<div class="pct">' + extra + "</div>" : "") + "</div>";
     }
-    return block("Latest · " + (s.day || ""), s.value, s.pct) +
+    return block("Last night · " + (s.day || ""), s.value, s.pct,
+                 vsMedian(m.format, s.value, d.p50)) +
            block("7-day avg", s.avg7, s.pct7) +
            block("30-day avg", s.avg30, s.pct30);
+  }
+
+  // Range strip: min · [p25 ▮ p75] · max, with median tick and latest marker.
+  function distHTML(payload) {
+    var m = payload.meta, d = payload.dist, s = payload.stats || {};
+    if (!d || d.min == null) return "";
+    var W = 600, H = 44, padL = 8, padR = 8;
+    var span = (d.max - d.min) || 1;
+    function x(v) { return padL + (v - d.min) / span * (W - padL - padR); }
+    var latest = s.value;
+    var svg = '<svg class="strip" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none">' +
+      '<line x1="' + x(d.min) + '" y1="20" x2="' + x(d.max) + '" y2="20" class="rail"/>' +
+      '<rect x="' + x(d.p25) + '" y="12" width="' + (x(d.p75) - x(d.p25)) + '" height="16" class="iqr"/>' +
+      '<line x1="' + x(d.p50) + '" y1="9" x2="' + x(d.p50) + '" y2="31" class="med"/>' +
+      (latest == null ? "" :
+        '<circle cx="' + x(latest) + '" cy="20" r="6" class="now"/>') +
+      "</svg>";
+    var labels = '<div class="striplbl">' +
+      '<span>min ' + fmt(m.format, d.min) + '</span>' +
+      '<span>p25 ' + fmt(m.format, d.p25) + '</span>' +
+      '<span>median ' + fmt(m.format, d.p50) + '</span>' +
+      '<span>p75 ' + fmt(m.format, d.p75) + '</span>' +
+      '<span>max ' + fmt(m.format, d.max) + '</span></div>';
+    return '<div class="controls"><h2>Where last night sits</h2>' +
+      '<span class="sub">' + d.n.toLocaleString() + ' nights · shaded box is the middle 50%</span></div>' +
+      svg + labels;
+  }
+
+  function explainHTML(payload) {
+    var ex = payload.explain;
+    if (!ex) return "";
+    var isScore = ex.kind === "score";
+    // Confidence gets its own headed column: a bare "high" beside a bedtime
+    // reads as a rating of the value, which is the misread being fixed.
+    var head = isScore
+      ? "<tr><th>Component</th><th>Last night</th><th class='num'>Score /100</th>" +
+        "<th class='num'>Weight</th><th>Measurement confidence</th></tr>"
+      : "<tr><th>Input</th><th>Value</th></tr>";
+    var rows = ex.components.map(function (c) {
+      var val = fmt(c.format, c.value);
+      if (isScore) {
+        var conf = c.confidence
+          ? '<span class="badge badge-' + c.confidence + '" style="margin-left:0">' +
+            c.confidence + "</span>" : "";
+        var note = c.note ? ' <span class="sub">' + c.note + "</span>" : "";
+        return "<tr><td>" + c.label + note + "</td><td>" + val + "</td>" +
+          "<td class='num'>" + (c.score == null ? "—" : Math.round(c.score)) + "</td>" +
+          "<td class='num'>" + c.weight + "</td><td>" + conf + "</td></tr>";
+      }
+      return "<tr" + (c.result ? " class='result'" : "") + "><td>" + c.label +
+        "</td><td class='num'>" + val + "</td></tr>";
+    }).join("");
+    return "<h2>How it's calculated</h2><p>" + ex.text + "</p>" +
+      "<p class='formula'>" + ex.formula + "</p>" +
+      "<table class='comps'>" + head + rows + "</table>";
   }
 
   function tbHTML(payload, period) {
@@ -209,11 +309,17 @@
   function initMetric() {
     fetchJSON(P.root + "/data/m/" + P.slug + ".json").then(function (payload) {
       el("stats").innerHTML = statsHTML(payload);
+      var dist = el("dist");
+      var distMarkup = distHTML(payload);
+      if (distMarkup) dist.innerHTML = distMarkup; else dist.hidden = true;
       var contrib = el("contrib");
       if (contrib && payload.meta.latest_contribution != null) {
-        contrib.textContent = "latest contribution " +
-          payload.meta.latest_contribution.toFixed(0) + "/100";
+        contrib.textContent = "last night scored " +
+          payload.meta.latest_contribution.toFixed(0) + "/100 on this component";
       }
+      var exp = el("explain");
+      var expMarkup = explainHTML(payload);
+      if (expMarkup) { exp.innerHTML = expMarkup; exp.hidden = false; }
       render(el("chart"), payload, "daily");
       el("tb").innerHTML = tbHTML(payload, "all");
       wireSeg(el("view-toggle"), "view", function (v) { render(el("chart"), payload, v); });
@@ -222,21 +328,6 @@
   }
 
   // --- overview -------------------------------------------------------------
-  function sparkSVG(values) {
-    var pts = [];
-    values.forEach(function (v, i) { if (v != null) pts.push([i, v]); });
-    if (pts.length < 2) return "<svg class='spark'></svg>";
-    var lo = Infinity, hi = -Infinity;
-    pts.forEach(function (p) { lo = Math.min(lo, p[1]); hi = Math.max(hi, p[1]); });
-    var span = (hi - lo) || 1, W = 120, H = 32, step = W / (values.length - 1);
-    var d = pts.map(function (p, i) {
-      return (i ? "L" : "M") + (p[0] * step).toFixed(1) + "," +
-             (H - 3 - (p[1] - lo) / span * (H - 6)).toFixed(1);
-    }).join(" ");
-    return "<svg class='spark' viewBox='0 0 " + W + " " + H +
-           "' preserveAspectRatio='none'><path d='" + d + "'/></svg>";
-  }
-
   function initOverview() {
     fetchJSON(P.root + "/data/overview.json").then(function (ov) {
       el("ov-sub").textContent = (ov.latest_day ? "Latest night " + ov.latest_day + " · " : "") +
@@ -250,14 +341,18 @@
           "respiratory rate are within their seasonal baselines.</p>";
       }
       el("cards").innerHTML = ov.cards.map(function (c) {
-        var pct = c.pct == null ? "" : "<span>better than <b>" +
-          c.pct.toFixed(0) + "%</b></span>";
+        function row(lbl, v, p) {
+          return "<tr><td>" + lbl + "</td><td class='num'>" + fmt(c.format, v) +
+            "</td><td class='pctcell'>" + ordinal(p) + "</td></tr>";
+        }
         return "<a class='cardlet' href='metrics/" + c.slug + ".html'>" +
           "<div class='lbl'>" + c.label + "</div>" +
           "<div class='big'>" + fmt(c.format, c.value) + "</div>" +
-          "<div class='mini'><span>7d <b>" + fmt(c.format, c.avg7) + "</b></span>" +
-          "<span>30d <b>" + fmt(c.format, c.avg30) + "</b></span>" + pct + "</div>" +
-          sparkSVG(c.spark) + "</a>";
+          "<table class='trio'>" +
+          row("Last night", c.value, c.pct) +
+          row("7-day", c.avg7, c.pct7) +
+          row("30-day", c.avg30, c.pct30) +
+          "</table></a>";
       }).join("");
       return fetchJSON(P.root + "/data/m/sleep-score.json");
     }).then(function (payload) {

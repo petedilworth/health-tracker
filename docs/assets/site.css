@@ -161,3 +161,45 @@ h2 { font-size: 15px; }
   .tb { grid-template-columns: 1fr; }
   .cardlet .big { font-size: 22px; }
 }
+
+/* ---- feedback round 1 additions ---- */
+
+/* Overview card trio table (replaces sparklines) */
+.trio { width: 100%; border-collapse: collapse; margin-top: 8px;
+        font-variant-numeric: tabular-nums; font-size: 12px; }
+.trio td { padding: 3px 0; border-top: 1px solid var(--grid); color: var(--muted); }
+.trio td.num { text-align: right; color: var(--ink); font-weight: 600; padding-right: 10px; }
+.trio td.pctcell { text-align: right; color: var(--aqua); font-weight: 600; white-space: nowrap; }
+.cardlet .spark { display: none; }
+
+/* Range strip */
+.dist .controls .sub { font-size: 12px; }
+.strip { width: 100%; height: 44px; display: block; }
+.strip .rail { stroke: var(--grid); stroke-width: 2; }
+.strip .iqr { fill: var(--blue); opacity: .28; rx: 3; }
+.strip .med { stroke: var(--ink-2); stroke-width: 2; }
+.strip .now { fill: var(--orange); stroke: var(--surface); stroke-width: 2; }
+.striplbl { display: flex; justify-content: space-between; flex-wrap: wrap;
+            gap: 6px 12px; color: var(--muted); font-size: 11.5px;
+            font-variant-numeric: tabular-nums; }
+
+/* How it's calculated */
+.explain p { color: var(--ink-2); font-size: 13.5px; max-width: 720px; margin: 8px 0; }
+.explain .formula { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+                    font-size: 12.5px; color: var(--ink); background: var(--surface-2);
+                    border: 1px solid var(--grid); border-radius: 6px;
+                    padding: 8px 10px; display: inline-block; }
+.comps { width: 100%; border-collapse: collapse; margin-top: 10px;
+         font-variant-numeric: tabular-nums; font-size: 13px; }
+.comps th { text-align: left; font-size: 11px; color: var(--muted);
+            text-transform: uppercase; letter-spacing: .05em; font-weight: 600;
+            padding: 6px 6px; border-bottom: 1px solid var(--grid); }
+.comps td { padding: 6px 6px; border-top: 1px solid var(--grid); }
+.comps td.num, .comps th.num { text-align: right; }
+.comps .badge { margin-left: 6px; }
+.comps tr.result td { color: var(--ink); font-weight: 700; border-top: 2px solid var(--muted); }
+
+/* Badges now carry words, so give them room */
+.badge { letter-spacing: .02em; text-transform: none; font-size: 11px; }
+
+.foot p { margin: 4px 0; max-width: 720px; }

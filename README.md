@@ -62,11 +62,11 @@ an absolute target.
 
 | Component | Weight | Confidence |
 |---|---|---|
-| Bedtime, sleep duration (vs need), timing, HR low, HRV, respiratory rate | 1.0 each | High |
+| Bedtime, sleep duration (vs need), time in bed, timing, HR low, HRV, respiratory rate | 1.0 each | High |
 | Efficiency, restfulness | 0.5 each | Moderate |
 | REM, deep | 0.25 each | Low |
 
-Total weight 7.5, normalised to 0–100. Body temperature is tracked and flagged
+Total weight 8.5, normalised to 0–100. Time in bed and sleep duration deliberately overlap — one rewards the opportunity for sleep, the other the outcome. Body temperature is tracked and flagged
 but deliberately kept **out** of the score — it signals illness, not sleep
 quality.
 

@@ -116,8 +116,52 @@ def test_overview_payload_has_all_cards():
     assert len(ov["cards"]) == len(site.CARD_KEYS)
     for card in ov["cards"]:
         assert card["label"] and card["format"]
-        assert len(card["spark"]) == site.SPARK_DAYS
+        # The trio the overview shows: last night / 7d / 30d, each with a pct.
+        for k in ("value", "avg7", "avg30", "pct", "pct7", "pct30"):
+            assert k in card, k
+        assert "spark" not in card
     assert isinstance(ov["flag"]["raised"], bool)
+
+
+# --- distribution strip + explanations ---------------------------------------
+
+def test_dist_payload_is_ordered_and_complete():
+    d = site._dist_payload(DAILY, "hrv")
+    assert d["min"] <= d["p25"] <= d["p50"] <= d["p75"] <= d["max"]
+    assert d["n"] == int(DAILY["hrv"].notna().sum())
+
+
+def test_sleep_score_explains_every_component():
+    payload = site.metric_payload(DAILY, _spec("sleep_score"))
+    ex = payload["explain"]
+    assert ex["kind"] == "score"
+    labels = {c["label"] for c in ex["components"]}
+    from sleep.schema import SCORE_COMPONENTS
+    assert labels == {m.label for m in SCORE_COMPONENTS}
+    weights = sum(c["weight"] for c in ex["components"])
+    assert weights == pytest.approx(8.5)
+    assert all(c["score"] is None or 0 <= c["score"] <= 100 for c in ex["components"])
+
+
+@pytest.mark.parametrize("key", ["sleep_performance_pct", "sleep_debt_h",
+                                 "sleep_need_h", "sri", "readiness"])
+def test_every_derived_metric_has_an_explanation(key):
+    payload = site.metric_payload(DAILY, _spec(key))
+    ex = payload.get("explain")
+    assert ex and ex["text"] and ex["formula"] and ex["components"]
+
+
+def test_raw_metrics_have_no_explanation_block():
+    payload = site.metric_payload(DAILY, _spec("hrv"))
+    assert "explain" not in payload
+
+
+def test_badge_labels_are_words_not_ratings():
+    # "HIGH" next to a 12:38am bedtime read as a rating of the value.
+    assert site.BADGE_LABEL["high"] == "high confidence"
+    assert site.BADGE_LABEL["derived"] == "derived metric"
+    html = site._metric_page(_spec("bedtime"))
+    assert "high confidence" in html and ">HIGH<" not in html
 
 
 # --- full build ---------------------------------------------------------------

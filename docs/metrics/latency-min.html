@@ -4,8 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
-<title>Sleep latency · Sleep Analytics</title>
 <link rel="icon" href="data:,">
+<title>Sleep latency · Sleep Analytics</title>
 <link rel="stylesheet" href="../assets/site.css">
 </head>
 <body>
@@ -17,10 +17,11 @@
 
 <main class="wrap">
   <header class="pagehead">
-    <h1>Sleep latency <span class="badge badge-moderate" title="Derived from wake detection or proprietary movement processing. Wake specificity is only 29-52%, so values skew optimistic and compress.">moderate</span></h1>
+    <h1>Sleep latency <span class="badge badge-moderate" title="Derived from wake detection or proprietary movement processing. Wake specificity is only 29-52%, so values skew optimistic and compress.">moderate confidence</span></h1>
     
   </header>
   <section class="stats" id="stats"></section>
+  <section class="card dist" id="dist"></section>
   <section class="card">
     <div class="controls">
       <div class="seg" id="view-toggle" role="tablist">
@@ -32,6 +33,7 @@
     </div>
     <div id="chart" class="chart"></div>
   </section>
+  <section class="card explain" id="explain" hidden></section>
   <section class="card">
     <div class="controls">
       <h2>Best &amp; worst nights</h2>
@@ -46,8 +48,10 @@
 </main>
 <script>window.PAGE = {type: "metric", slug: "latency-min", root: ".."};</script>
 <footer class="foot">
-  <a href="../review/anomalies.md">Anomaly review</a> ·
-  <a href="https://github.com/petedilworth/health-tracker">Repo</a>
+  <p>Percentiles rank a night against every night ever recorded. Higher is always better — so an early bedtime or a low resting heart rate ranks high.</p>
+  <p>Confidence badges describe how well the ring can measure a signal, not how good the value is.</p>
+  <p><a href="../review/anomalies.md">Anomaly review</a> ·
+  <a href="https://github.com/petedilworth/health-tracker">Repo</a></p>
 </footer>
 <script src="../assets/plotly.min.js"></script>
 <script src="../assets/app.js"></script>

@@ -4,9 +4,10 @@ Custom analytics on top of [Oura Ring](https://ouraring.com) data — a personal
 sleep score, sleep debt, sleep regularity and readiness, published as a website
 and a daily email, all automated through GitHub Actions.
 
-> **Build status: Stages 1–2 complete (data layer + metrics engine).**
-> Stage 3 website and Stage 4 email are in progress. The daily job pulls,
-> stores and computes all metrics; it does not yet publish or email.
+> **Build status: Stages 1–3 complete (data layer, metrics engine, website).**
+> Stage 4 (daily email) is in progress. The daily job pulls, computes and
+> rebuilds the site; enable GitHub Pages (Settings → Pages → deploy from
+> branch `main`, folder `/docs`) to serve it.
 
 ## Why this exists
 
@@ -125,6 +126,21 @@ deviation and 1.66× the interquartile range** of Oura's own score, while
 correlating 0.65 with it — the same underlying nights, spread across a range
 that actually discriminates.
 
+## The website
+
+Generated into `docs/` on every run and served by GitHub Pages: a dark,
+data-dense overview (eight headline cards, health-flag banner, sleep-score
+chart) plus a deep-dive page per metric — interactive Plotly charts with
+Daily/Weekly/Quarterly/Annual views, range selection, best/worst-10 lists
+filterable by period, and a confidence badge on every page. Low-confidence
+metrics (REM, deep, light) render de-emphasised with a ±1 SD band, so the chart
+itself says "directional, not exact". Percentiles always read "better than X%
+of nights" regardless of whether the metric is higher- or lower-is-better.
+
+`plotly.min.js` is vendored rather than loaded from a CDN, so the site has no
+external dependencies at all. The whole site is `noindex` and excluded via
+robots.txt.
+
 ## Project layout
 
 ```
@@ -142,10 +158,11 @@ src/sleep/
   score.py       # sleep score, need, debt, performance, readiness
   flags.py       # combined health flag
   compute.py     # full metric pipeline -> data/computed.csv
+  site.py        # static site generator -> docs/
 scripts/backfill.py, exclude_day.py, anomaly_report.py, validate_score.py,
          need_calibration.py
 run.py           # daily entry point
-tests/           # 59 tests, no network required
+tests/           # 68 tests, no network required
 ```
 
 `data/computed.csv` is derived and git-ignored — it is regenerated from

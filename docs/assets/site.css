@@ -1,0 +1,163 @@
+/* Sleep Analytics — dark, data-dense. Single committed dark look.
+   Palette: validated dark-mode steps (blue #3987e5, aqua #199e70, orange
+   #d95926, red #e66767) on surface #1a1a19 over page #0d0d0d. */
+
+:root {
+  --page: #0d0d0d;
+  --surface: #1a1a19;
+  --surface-2: #232322;
+  --ink: #ffffff;
+  --ink-2: #c3c2b7;
+  --muted: #898781;
+  --grid: #2c2c2a;
+  --blue: #3987e5;
+  --aqua: #199e70;
+  --orange: #d95926;
+  --red: #e66767;
+  --good: #0ca30c;
+  --radius: 10px;
+}
+
+* { box-sizing: border-box; }
+html, body {
+  margin: 0; padding: 0;
+  background: var(--page);
+  color: var(--ink-2);
+  font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+a { color: var(--blue); text-decoration: none; }
+a:hover { text-decoration: underline; }
+h1, h2 { color: var(--ink); font-weight: 650; margin: 0; }
+h1 { font-size: 22px; }
+h2 { font-size: 15px; }
+
+.nav {
+  display: flex; align-items: center; gap: 18px;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--grid);
+  background: var(--page);
+  position: sticky; top: 0; z-index: 10;
+}
+.nav a { color: var(--ink-2); font-size: 13px; }
+.nav a:hover { color: var(--ink); text-decoration: none; }
+.nav .brand { color: var(--ink); font-weight: 700; font-size: 15px; margin-right: 6px; }
+
+.wrap { max-width: 1080px; margin: 0 auto; padding: 20px 16px 40px; }
+.pagehead { margin: 6px 0 16px; }
+.pagehead .sub, .sub { color: var(--muted); font-size: 13px; margin: 4px 0 0; }
+.note { color: var(--muted); font-size: 12.5px; border-left: 3px solid var(--grid);
+        padding-left: 10px; margin: 8px 0 0; max-width: 640px; }
+
+/* Confidence badges */
+.badge {
+  display: inline-block; vertical-align: middle;
+  font-size: 10.5px; font-weight: 600; letter-spacing: .04em;
+  text-transform: uppercase; border-radius: 999px;
+  padding: 2px 9px; margin-left: 8px; cursor: help;
+}
+.badge-high     { color: #9fd49f; background: #12280f; }
+.badge-moderate { color: #e8c66a; background: #2c230a; }
+.badge-low      { color: #e8a08a; background: #2d1510; }
+.badge-derived  { color: var(--ink-2); background: var(--surface-2); }
+
+/* Health flag banner */
+.flagbox {
+  border: 1px solid var(--red); border-radius: var(--radius);
+  background: #2d1510; color: #f0b9ae;
+  padding: 12px 16px; margin: 0 0 16px; font-size: 13.5px;
+}
+.flagbox b { color: var(--red); }
+.allclear { color: var(--muted); font-size: 12.5px; margin: 0 0 16px; }
+
+/* Overview cards */
+.cards {
+  display: grid; gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  margin-bottom: 16px;
+}
+.cardlet {
+  display: block; background: var(--surface);
+  border: 1px solid var(--grid); border-radius: var(--radius);
+  padding: 12px 14px; color: inherit;
+}
+.cardlet:hover { border-color: var(--muted); text-decoration: none; }
+.cardlet .lbl { font-size: 12px; color: var(--muted); }
+.cardlet .big { font-size: 26px; font-weight: 700; color: var(--ink);
+                line-height: 1.15; margin: 2px 0; font-variant-numeric: tabular-nums; }
+.cardlet .mini { font-size: 11.5px; color: var(--muted); display: flex;
+                 gap: 10px; flex-wrap: wrap; }
+.cardlet .mini b { color: var(--ink-2); font-weight: 600; }
+.spark { width: 100%; height: 32px; margin-top: 6px; }
+.spark path { fill: none; stroke: var(--blue); stroke-width: 1.5; opacity: .85; }
+
+/* Stats row on metric pages */
+.stats {
+  display: grid; gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  margin-bottom: 14px;
+}
+.stat {
+  background: var(--surface); border: 1px solid var(--grid);
+  border-radius: var(--radius); padding: 10px 12px;
+}
+.stat .lbl { font-size: 11px; color: var(--muted); text-transform: uppercase;
+             letter-spacing: .05em; }
+.stat .val { font-size: 20px; font-weight: 700; color: var(--ink);
+             font-variant-numeric: tabular-nums; }
+.stat .pct { font-size: 11.5px; color: var(--muted); }
+.stat .pct b { color: var(--aqua); font-weight: 600; }
+
+/* Chart cards */
+.card {
+  background: var(--surface); border: 1px solid var(--grid);
+  border-radius: var(--radius); padding: 12px 14px; margin-bottom: 16px;
+}
+.controls { display: flex; justify-content: space-between; align-items: center;
+            gap: 10px; flex-wrap: wrap; margin-bottom: 6px; }
+.chart { width: 100%; height: 420px; }
+.chart-tall { height: 460px; }
+
+/* Segmented toggle */
+.seg { display: inline-flex; background: var(--surface-2);
+       border: 1px solid var(--grid); border-radius: 8px; padding: 2px; }
+.seg button {
+  appearance: none; border: 0; background: transparent; color: var(--muted);
+  font: 600 12px system-ui, sans-serif; padding: 5px 11px;
+  border-radius: 6px; cursor: pointer;
+}
+.seg button.on { background: var(--page); color: var(--ink); }
+.seg button:hover:not(.on) { color: var(--ink-2); }
+
+/* Top/bottom lists */
+.tb { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.tb h3 { font-size: 12px; color: var(--muted); text-transform: uppercase;
+         letter-spacing: .05em; margin: 4px 0 6px; }
+.tb table { width: 100%; border-collapse: collapse;
+            font-variant-numeric: tabular-nums; }
+.tb td { padding: 4px 6px; border-top: 1px solid var(--grid); font-size: 13px; }
+.tb td:last-child { text-align: right; color: var(--ink); font-weight: 600; }
+.tb .best td:last-child { color: var(--aqua); }
+.tb .worst td:last-child { color: var(--red); }
+
+/* All-metrics list */
+.mlist { display: grid; gap: 8px; margin: 10px 0 22px;
+         grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
+.mrow {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--surface); border: 1px solid var(--grid);
+  border-radius: 8px; padding: 9px 12px; color: var(--ink-2);
+}
+.mrow:hover { border-color: var(--muted); text-decoration: none; }
+.mrow .mval { margin-left: auto; color: var(--ink); font-weight: 650;
+              font-variant-numeric: tabular-nums; }
+
+.foot { max-width: 1080px; margin: 0 auto; padding: 10px 16px 30px;
+        color: var(--muted); font-size: 12px; }
+.foot a { color: var(--muted); }
+
+@media (max-width: 640px) {
+  .chart { height: 320px; }
+  .chart-tall { height: 340px; }
+  .tb { grid-template-columns: 1fr; }
+  .cardlet .big { font-size: 22px; }
+}

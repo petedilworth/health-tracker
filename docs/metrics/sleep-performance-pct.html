@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Sleep performance · Sleep Analytics</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body>
+<nav class="nav">
+  <a class="brand" href="../index.html">Sleep</a>
+  <a href="../index.html">Overview</a>
+  <a href="../metrics/index.html">All metrics</a>
+</nav>
+
+<main class="wrap">
+  <header class="pagehead">
+    <h1>Sleep performance <span class="badge badge-derived" title="Computed from several measurements; inherits their confidence.">derived</span></h1>
+    
+  </header>
+  <section class="stats" id="stats"></section>
+  <section class="card">
+    <div class="controls">
+      <div class="seg" id="view-toggle" role="tablist">
+        <button data-view="daily" class="on">Daily</button>
+        <button data-view="weekly">Weekly</button>
+        <button data-view="quarterly">Quarterly</button>
+        <button data-view="annual">Annual</button>
+      </div>
+    </div>
+    <div id="chart" class="chart"></div>
+  </section>
+  <section class="card">
+    <div class="controls">
+      <h2>Best &amp; worst nights</h2>
+      <div class="seg" id="tb-toggle">
+        <button data-period="all" class="on">All time</button>
+        <button data-period="year">Last year</button>
+        <button data-period="quarter">Last 90d</button>
+      </div>
+    </div>
+    <div class="tb" id="tb"></div>
+  </section>
+</main>
+<script>window.PAGE = {type: "metric", slug: "sleep-performance-pct", root: ".."};</script>
+<footer class="foot">
+  <a href="../review/anomalies.md">Anomaly review</a> ·
+  <a href="https://github.com/petedilworth/health-tracker">Repo</a>
+</footer>
+<script src="../assets/plotly.min.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

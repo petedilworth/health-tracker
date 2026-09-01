@@ -19,7 +19,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
 
-from sleep import compute, ingest  # noqa: E402
+from sleep import compute, ingest, site  # noqa: E402
 
 
 def main() -> None:
@@ -28,6 +28,8 @@ def main() -> None:
                         help="Days of recent data to re-pull (default: 30).")
     parser.add_argument("--compute-only", action="store_true",
                         help="Skip the Oura pull; recompute from stored history.")
+    parser.add_argument("--no-site", action="store_true",
+                        help="Skip regenerating the website in docs/.")
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -44,6 +46,8 @@ def main() -> None:
         return
 
     compute.save(daily)
+    if not args.no_site:
+        site.build_site(daily, summary)
     print(json.dumps(summary, indent=2, default=str))
 
 

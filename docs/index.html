@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Sleep Analytics</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="./assets/site.css">
+</head>
+<body>
+<nav class="nav">
+  <a class="brand" href="./index.html">Sleep</a>
+  <a href="./index.html">Overview</a>
+  <a href="./metrics/index.html">All metrics</a>
+</nav>
+
+<main class="wrap">
+  <header class="pagehead"><h1 id="ov-title">Sleep Analytics</h1>
+    <p class="sub" id="ov-sub"></p></header>
+  <div id="flag"></div>
+  <section class="cards" id="cards"></section>
+  <section class="card">
+    <div class="controls"><h2>Sleep score</h2></div>
+    <div id="chart" class="chart chart-tall"></div>
+  </section>
+</main>
+<script>window.PAGE = {type: "overview", root: "."};</script>
+<footer class="foot">
+  <a href="./review/anomalies.md">Anomaly review</a> ·
+  <a href="https://github.com/petedilworth/health-tracker">Repo</a>
+</footer>
+<script src="./assets/plotly.min.js"></script>
+<script src="./assets/app.js"></script>
+</body>
+</html>

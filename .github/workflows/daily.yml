@@ -27,18 +27,16 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      # Stage 1 scope: pull and store. Metrics, site and email land in the
-      # later stages and get wired in here as they arrive.
-      - name: Pull latest data
+      - name: Pull data, compute metrics, rebuild site
         env:
           OURA_PAT: ${{ secrets.OURA_PAT }}
         run: python run.py
 
-      - name: Commit updated data
+      - name: Commit updated data & site
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/
+          git add data/ docs/
           if git diff --cached --quiet; then
             echo "No changes to commit."
           else

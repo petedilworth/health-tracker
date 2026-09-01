@@ -72,14 +72,28 @@ def sleep_need(daily: pd.DataFrame) -> pd.Series:
 
 
 def sleep_debt_and_need(daily: pd.DataFrame) -> pd.DataFrame:
-    """Iteratively resolve need and debt, which depend on each other.
+    """Resolve sleep need, debt, and tonight's recommended sleep.
 
-    debt_t = decay * debt_{t-1} + max(0, need_t - sleep_t)
+    Two distinct quantities, deliberately kept apart:
+
+    * `sleep_need_h` — your stable physiological baseline. Debt and performance
+      are both measured against this.
+    * `sleep_recommended_h` — what to aim for tonight: baseline plus repayment
+      of current debt plus an allowance for an active day.
+
+    Folding the debt uplift into the need used to *measure* debt creates a
+    feedback loop: a chronically short sleeper pins the uplift at its cap, which
+    raises need, which enlarges the shortfall, which raises debt again. It is
+    also circular — you cannot measure a shortfall against a target that the
+    shortfall itself inflated. So the debt accounting uses the baseline only.
+
+    debt_t = decay * debt_{t-1} + max(0, baseline_t - sleep_t)
 
     Exponential decay rather than a fixed window: recent nights dominate and old
-    debt fades, so the number responds when you catch up instead of growing
-    forever. Nights with no recording decay the existing debt but add none,
-    since we don't know what happened.
+    debt fades, so the number responds when you catch up. Nights with no
+    recording hold debt flat rather than decaying it — an unworn ring is not
+    evidence of recovery, and decaying through a gap would quietly forgive debt
+    that may never have been repaid.
     """
     decay = float(np.exp(-1.0 / DEBT_TAU_DAYS))
     baseline = sleep_need(daily)
@@ -93,7 +107,8 @@ def sleep_debt_and_need(daily: pd.DataFrame) -> pd.DataFrame:
     busy_threshold = steps.quantile(ACTIVITY_QUANTILE) if steps.notna().any() else np.inf
     busy_yesterday = (steps.shift(1) >= busy_threshold).fillna(False)
 
-    needs, debts = np.empty(len(daily)), np.empty(len(daily))
+    debts = np.empty(len(daily))
+    recommended = np.empty(len(daily))
     debt = 0.0
     base_vals = baseline.to_numpy()
     slept_vals = slept.to_numpy()
@@ -101,20 +116,23 @@ def sleep_debt_and_need(daily: pd.DataFrame) -> pd.DataFrame:
     busy_vals = busy_yesterday.to_numpy()
 
     for i in range(len(daily)):
-        need = base_vals[i]
-        need += min(debt * DEBT_UPLIFT_PER_HOUR, DEBT_UPLIFT_CAP_H)
+        # Tonight's target reflects the debt carried *into* tonight.
+        target = base_vals[i] + min(debt * DEBT_UPLIFT_PER_HOUR, DEBT_UPLIFT_CAP_H)
         if busy_vals[i]:
-            need += ACTIVITY_UPLIFT_H
-        need = float(np.clip(need, NEED_MIN_H, NEED_MAX_H + DEBT_UPLIFT_CAP_H))
+            target += ACTIVITY_UPLIFT_H
+        recommended[i] = float(np.clip(target, NEED_MIN_H,
+                                       NEED_MAX_H + DEBT_UPLIFT_CAP_H))
 
-        debt *= decay
         if night_vals[i]:
-            debt += max(0.0, need - slept_vals[i])
+            debt = debt * decay + max(0.0, base_vals[i] - slept_vals[i])
+        # else: no recording, so hold debt where it is.
+        debts[i] = debt
 
-        needs[i], debts[i] = need, debt
-
-    out = pd.DataFrame({"sleep_need_h": needs, "sleep_debt_h": debts},
-                       index=daily.index)
+    out = pd.DataFrame({
+        "sleep_need_h": baseline.to_numpy(),
+        "sleep_recommended_h": recommended,
+        "sleep_debt_h": debts,
+    }, index=daily.index)
     out["sleep_performance_pct"] = np.where(
         has_night, np.minimum(slept / out["sleep_need_h"] * 100.0, 100.0), np.nan
     )

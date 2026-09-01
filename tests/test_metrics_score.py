@@ -180,6 +180,58 @@ def test_naps_pay_down_debt():
     assert with_naps["sleep_debt_h"].iloc[-1] < without["sleep_debt_h"].iloc[-1]
 
 
+def test_debt_does_not_inflate_its_own_target():
+    """Regression: a chronically short sleeper must not pin the need upward.
+
+    Debt used to be measured against a need that the debt itself raised, which
+    is circular and pinned the uplift at its cap forever.
+    """
+    # A smooth distribution, so the rolling P90 doesn't sit on a discontinuity.
+    n = 300
+    nights = np.random.default_rng(7).normal(6.0, 0.9, n).clip(4.0, 9.0)
+    d = _daily(n=n, total_sleep_h=nights, nap_sleep_h=0.0, steps=np.nan)
+    out = score.sleep_debt_and_need(d)
+
+    need, rec = out["sleep_need_h"], out["sleep_recommended_h"]
+    assert out["sleep_debt_h"].iloc[-1] > 2, "setup should build real debt"
+    # The measurement baseline must not drift upward as debt accumulates.
+    assert need.iloc[-1] == pytest.approx(need.iloc[150], abs=0.3)
+    # Tonight's recommendation may exceed it — that's the actionable number.
+    assert rec.iloc[-1] > need.iloc[-1]
+
+
+def test_need_tracks_the_rolling_p90_of_actual_sleep():
+    rng = np.random.default_rng(11)
+    nights = rng.normal(6.7, 0.95, 400).clip(4, 10)
+    d = _daily(n=400, total_sleep_h=nights, nap_sleep_h=0.0, steps=np.nan)
+    out = score.sleep_debt_and_need(d)
+    expected = pd.Series(nights).quantile(0.90)
+    assert out["sleep_need_h"].median() == pytest.approx(expected, abs=0.4)
+
+
+def test_debt_holds_flat_across_a_gap():
+    """An unworn ring is not evidence of recovery, so debt must not decay."""
+    n = 60
+    nights = np.full(n, 5.5)
+    nights[::10] = 8.0
+    nights[40:50] = np.nan             # a ten-night gap
+    d = _daily(n=n, total_sleep_h=nights, nap_sleep_h=0.0, steps=np.nan)
+    debt = score.sleep_debt_and_need(d)["sleep_debt_h"]
+    assert debt.iloc[40:50].nunique() == 1, "debt should be frozen through the gap"
+    assert debt.iloc[49] == pytest.approx(debt.iloc[39])
+
+
+def test_performance_measured_against_baseline_not_recommendation():
+    n = 200
+    nights = np.full(n, 6.0)
+    nights[::10] = 8.0
+    d = _daily(n=n, total_sleep_h=nights, nap_sleep_h=0.0, steps=np.nan)
+    out = score.sleep_debt_and_need(d)
+    row = out.iloc[-1]
+    expected = min(nights[-1] / row["sleep_need_h"] * 100, 100)
+    assert row["sleep_performance_pct"] == pytest.approx(expected, abs=0.01)
+
+
 def test_sleep_need_stays_in_bounds():
     d = _daily(n=300, total_sleep_h=np.random.default_rng(1).normal(7, 1.5, 300),
                nap_sleep_h=0.0, steps=np.nan)

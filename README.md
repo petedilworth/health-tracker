@@ -111,7 +111,8 @@ Two conventions worth knowing:
 | Metric | What it is |
 |---|---|
 | **Sleep score** | Weighted composite, every component graded against your own history |
-| **Sleep need** | Rolling 180-day 90th percentile of your sleep, flexed up for debt and activity |
+| **Sleep need** | Stable baseline: rolling 180-day 90th percentile of your sleep (~7.8h) |
+| **Recommended tonight** | Need plus debt repayment and an allowance for an active day |
 | **Sleep performance %** | Actual sleep ÷ need |
 | **Sleep debt** | Exponentially decaying cumulative shortfall (τ ≈ 7 days) — naps repay it |
 | **SRI** | Sleep Regularity Index, 0–100, over a trailing 30 days |

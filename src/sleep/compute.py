@@ -21,7 +21,8 @@ log = logging.getLogger("sleep.compute")
 
 # Metrics that get 7d/30d averages and percentile columns on the site.
 ROLLUP_COLUMNS = [m.key for m in ALL_METRICS] + [
-    "sleep_score", "sleep_debt_h", "sleep_performance_pct", "readiness", "sri",
+    "sleep_score", "sleep_debt_h", "sleep_need_h", "sleep_recommended_h",
+    "sleep_performance_pct", "readiness", "sri",
 ]
 
 # Steps had an unusable early era in this dataset; detected, not hardcoded.

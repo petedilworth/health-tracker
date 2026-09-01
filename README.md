@@ -5,9 +5,30 @@ sleep score, sleep debt, sleep regularity and readiness, published as a website
 and a daily email, all automated through GitHub Actions.
 
 > **Build status: Stages 1–3 complete (data layer, metrics engine, website).**
-> Stage 4 (daily email) is in progress. The daily job pulls, computes and
-> rebuilds the site; enable GitHub Pages (Settings → Pages → deploy from
-> branch `main`, folder `/docs`) to serve it.
+> Stage 4 (daily email) is in progress.
+>
+> **Live site: https://petedilworth.github.io/health-tracker/**
+
+## What's public
+
+This repository is public so GitHub Pages can serve the dashboard — Pages
+cannot serve a private repo without GitHub Pro, and even then the published
+site is public regardless (access-controlled Pages is Enterprise-only). So
+being public is the price of a viewable site, and it was chosen deliberately.
+
+**Public:** everything in this repo and its history — the full nightly history
+in `data/history.csv`, the exclusions list, the site's JSON payloads (which
+contain every nightly value), the code, and all commit messages. Workflow run
+logs are public too, though secrets are masked.
+
+**Not public:** `OURA_PAT`, `RESEND_API_KEY` and `MAIL_TO` live in GitHub
+Actions secrets, which stay private on a public repo and never appear in logs.
+The git history has been scanned and contains no credentials.
+
+The site carries `<meta name="robots" content="noindex">` on every page plus a
+`Disallow: /` robots.txt, so search engines skip it — but anyone with the URL
+can read it. Reverting to private later would not un-publish anything already
+retrieved.
 
 ## Why this exists
 

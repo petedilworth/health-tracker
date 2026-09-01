@@ -15,3 +15,6 @@ Thumbs.db
 # Notebooks (this project is a clean-Python rebuild; keep them out)
 *.ipynb
 .ipynb_checkpoints/
+
+# Derived — regenerated every run from history.csv + exclusions.csv
+data/computed.csv

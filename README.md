@@ -4,9 +4,9 @@ Custom analytics on top of [Oura Ring](https://ouraring.com) data — a personal
 sleep score, sleep debt, sleep regularity and readiness, published as a website
 and a daily email, all automated through GitHub Actions.
 
-> **Build status: Stage 1 of 4 complete (data layer).**
-> Stage 2 metrics engine, Stage 3 website and Stage 4 email are in progress.
-> The daily job currently pulls and stores data; it does not yet email.
+> **Build status: Stages 1–2 complete (data layer + metrics engine).**
+> Stage 3 website and Stage 4 email are in progress. The daily job pulls,
+> stores and computes all metrics; it does not yet publish or email.
 
 ## Why this exists
 
@@ -106,6 +106,23 @@ Two conventions worth knowing:
   debt, but efficiency, timing and stage percentages are only meaningful for a
   consolidated night.
 
+## The metrics
+
+| Metric | What it is |
+|---|---|
+| **Sleep score** | Weighted composite, every component graded against your own history |
+| **Sleep need** | Rolling 180-day 90th percentile of your sleep, flexed up for debt and activity |
+| **Sleep performance %** | Actual sleep ÷ need |
+| **Sleep debt** | Exponentially decaying cumulative shortfall (τ ≈ 7 days) — naps repay it |
+| **SRI** | Sleep Regularity Index, 0–100, over a trailing 30 days |
+| **Readiness** | HRV, resting HR, respiratory rate and last night's score |
+| **Health flag** | Fires when temperature or respiratory rate exceeds 2 SD from its seasonal baseline |
+
+Measured against 2,722 nights, the custom score has **1.5× the standard
+deviation and 1.66× the interquartile range** of Oura's own score, while
+correlating 0.65 with it — the same underlying nights, spread across a range
+that actually discriminates.
+
 ## Project layout
 
 ```
@@ -115,11 +132,21 @@ src/sleep/
   client.py      # Oura API v2 (sleep, daily_sleep, daily_activity, daily_readiness)
   transform.py   # raw records -> one row per day
   store.py       # CSV history, idempotent upsert, exclusions
+  quality.py     # clamping, reliable-start detection, anomaly detection
   ingest.py      # pull -> transform -> upsert orchestration
-scripts/backfill.py, scripts/exclude_day.py
+  seasonal.py    # month-effect de-trending, rolling baselines
+  metrics.py     # daily reindexing, rolling averages, percentiles, aggregation
+  regularity.py  # Sleep Regularity Index
+  score.py       # sleep score, need, debt, performance, readiness
+  flags.py       # combined health flag
+  compute.py     # full metric pipeline -> data/computed.csv
+scripts/backfill.py, exclude_day.py, anomaly_report.py, validate_score.py
 run.py           # daily entry point
-tests/           # no network required
+tests/           # 47 tests, no network required
 ```
+
+`data/computed.csv` is derived and git-ignored — it is regenerated from
+`history.csv` and `exclusions.csv` on every run.
 
 ## Local development (optional)
 

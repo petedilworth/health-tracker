@@ -166,11 +166,10 @@ def test_debt_decay_rate_matches_tau():
 
 
 def test_naps_pay_down_debt():
-    # Sleep must vary, otherwise the derived need equals the actual sleep and
-    # there is no shortfall for a nap to repay.
-    n = 60
-    nights = np.full(n, 6.0)
-    nights[::10] = 9.0                      # occasional long nights lift the need
+    # Sleep must vary smoothly: with a spiky distribution the need percentile
+    # can land exactly on the modal value, leaving no shortfall to repay.
+    n = 120
+    nights = np.random.default_rng(21).normal(6.0, 0.9, n).clip(4.0, 9.0)
     base = dict(total_sleep_h=nights, steps=np.nan)
 
     without = score.sleep_debt_and_need(_daily(n=n, nap_sleep_h=0.0, **base))
@@ -200,12 +199,14 @@ def test_debt_does_not_inflate_its_own_target():
     assert rec.iloc[-1] > need.iloc[-1]
 
 
-def test_need_tracks_the_rolling_p90_of_actual_sleep():
+def test_need_tracks_the_configured_quantile_of_actual_sleep():
+    """Reads NEED_QUANTILE rather than hardcoding it, so recalibrating the
+    baseline (P90 -> P75 in 2026-09, reviewed annually) doesn't break the test."""
     rng = np.random.default_rng(11)
     nights = rng.normal(6.7, 0.95, 400).clip(4, 10)
     d = _daily(n=400, total_sleep_h=nights, nap_sleep_h=0.0, steps=np.nan)
     out = score.sleep_debt_and_need(d)
-    expected = pd.Series(nights).quantile(0.90)
+    expected = pd.Series(nights).quantile(score.NEED_QUANTILE)
     assert out["sleep_need_h"].median() == pytest.approx(expected, abs=0.4)
 
 

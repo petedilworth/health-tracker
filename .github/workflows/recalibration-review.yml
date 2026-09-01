@@ -1,0 +1,52 @@
+name: Recalibration review
+
+# The sleep-need baseline is a judgement call, not a measurement. This opens an
+# issue each March with the current numbers so the choice gets re-argued against
+# fresh data rather than quietly persisting because nobody remembered it.
+#
+# First firing: 2027-03-01, six months after the P90 -> P75 decision.
+on:
+  schedule:
+    - cron: "0 9 1 3 *"     # 09:00 on 1 March, annually
+  workflow_dispatch: {}     # or run it early, any time
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Build calibration table
+        run: |
+          {
+            echo "The sleep-need baseline decides how much of your current"
+            echo "sleep pattern counts as restriction versus requirement."
+            echo "It was set to P75 in September 2026, with a note to revisit."
+            echo ""
+            python scripts/need_calibration.py --markdown
+            echo ""
+            echo "To change it: edit \`NEED_QUANTILE\` in \`src/sleep/score.py\`."
+            echo "To keep it as-is: close this issue."
+          } > review.md
+          cat review.md >> $GITHUB_STEP_SUMMARY
+
+      - name: Open review issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue create \
+            --title "Recalibration review: sleep-need baseline ($(date -u +%Y))" \
+            --body-file review.md \
+            --repo "${{ github.repository }}"

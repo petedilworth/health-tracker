@@ -19,7 +19,17 @@ from .schema import SCORE_COMPONENTS, TOTAL_SCORE_WEIGHT
 
 # --- sleep need -------------------------------------------------------------
 NEED_WINDOW_DAYS = 180
-NEED_QUANTILE = 0.90        # an unrestricted night ~= your longer natural nights
+# Which percentile of your own sleep stands in for "unrestricted" need.
+#
+# Chosen 2026-09: P75 (~7.2h here) over P90 (~7.8h). At P90 the need was met on
+# only 9.3% of nights — a target hit one night in eleven stops being believed.
+# P75 lifts that to 22.5% while still leaving a real ~0.55h nightly gap.
+#
+# The trade-off, recorded for the review: if true requirement is nearer 7.8h,
+# P75 encodes part of a chronic restriction as the requirement and will
+# under-report debt. Revisited annually by the recalibration-review workflow,
+# first firing 2027-03-01.
+NEED_QUANTILE = 0.75
 NEED_MIN_H, NEED_MAX_H = 6.0, 10.0
 DEBT_UPLIFT_PER_HOUR = 0.15
 DEBT_UPLIFT_CAP_H = 1.0

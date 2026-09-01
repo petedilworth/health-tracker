@@ -59,6 +59,7 @@ from the GitHub mobile app).
 | **Backfill history** | One-off. Pulls your entire history (default from 2019-01-01). Run this once. |
 | **Anomaly report** | Builds a review queue of suspicious nights into [`docs/review/anomalies.md`](docs/review/anomalies.md), with surrounding nights for context. |
 | **Exclude a day** | Removes bad nights from every metric. Accepts several comma-separated dates. Set `action: include` to restore them. |
+| **Recalibration review** | Opens an issue each 1 March with the sleep-need baseline comparison, so that judgement call gets re-argued against current data. |
 
 ## Data quality
 
@@ -111,7 +112,7 @@ Two conventions worth knowing:
 | Metric | What it is |
 |---|---|
 | **Sleep score** | Weighted composite, every component graded against your own history |
-| **Sleep need** | Stable baseline: rolling 180-day 90th percentile of your sleep (~7.8h) |
+| **Sleep need** | Stable baseline: rolling 180-day 75th percentile of your sleep (~7.2h) |
 | **Recommended tonight** | Need plus debt repayment and an allowance for an active day |
 | **Sleep performance %** | Actual sleep ÷ need |
 | **Sleep debt** | Exponentially decaying cumulative shortfall (τ ≈ 7 days) — naps repay it |
@@ -141,9 +142,10 @@ src/sleep/
   score.py       # sleep score, need, debt, performance, readiness
   flags.py       # combined health flag
   compute.py     # full metric pipeline -> data/computed.csv
-scripts/backfill.py, exclude_day.py, anomaly_report.py, validate_score.py
+scripts/backfill.py, exclude_day.py, anomaly_report.py, validate_score.py,
+         need_calibration.py
 run.py           # daily entry point
-tests/           # 47 tests, no network required
+tests/           # 51 tests, no network required
 ```
 
 `data/computed.csv` is derived and git-ignored — it is regenerated from

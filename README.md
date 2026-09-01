@@ -40,7 +40,7 @@ an absolute target.
 
 | Component | Weight | Confidence |
 |---|---|---|
-| Bedtime, time in bed, timing, HR low, HRV, respiratory rate | 1.0 each | High |
+| Bedtime, sleep duration (vs need), timing, HR low, HRV, respiratory rate | 1.0 each | High |
 | Efficiency, restfulness | 0.5 each | Moderate |
 | REM, deep | 0.25 each | Low |
 
@@ -145,7 +145,7 @@ src/sleep/
 scripts/backfill.py, exclude_day.py, anomaly_report.py, validate_score.py,
          need_calibration.py
 run.py           # daily entry point
-tests/           # 51 tests, no network required
+tests/           # 59 tests, no network required
 ```
 
 `data/computed.csv` is derived and git-ignored — it is regenerated from

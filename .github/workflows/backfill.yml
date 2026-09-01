@@ -35,14 +35,18 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      # Inputs go through env vars, never interpolated into the script text —
+      # direct ${{ inputs.* }} inside run: is an injection surface.
       - name: Run backfill
         env:
           OURA_PAT: ${{ secrets.OURA_PAT }}
+          START: ${{ inputs.start }}
+          END: ${{ inputs.end }}
         run: |
-          if [ -z "${{ inputs.end }}" ]; then
-            python scripts/backfill.py --start "${{ inputs.start }}"
+          if [ -z "$END" ]; then
+            python scripts/backfill.py --start "$START"
           else
-            python scripts/backfill.py --start "${{ inputs.start }}" --end "${{ inputs.end }}"
+            python scripts/backfill.py --start "$START" --end "$END"
           fi
 
       - name: Report what landed
@@ -60,6 +64,8 @@ jobs:
           echo '```' >> $GITHUB_STEP_SUMMARY
 
       - name: Commit history
+        env:
+          START: ${{ inputs.start }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -67,6 +73,6 @@ jobs:
           if git diff --cached --quiet; then
             echo "No changes to commit."
           else
-            git commit -m "data: backfill history ${{ inputs.start }} onward"
+            git commit -m "data: backfill history $START onward"
             git push
           fi

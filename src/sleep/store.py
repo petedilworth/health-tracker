@@ -38,13 +38,23 @@ def load_history(path: Path) -> pd.DataFrame:
 
 
 def upsert(existing: pd.DataFrame, new: pd.DataFrame) -> pd.DataFrame:
-    """Merge freshly pulled rows into history; new values win on conflict."""
+    """Merge freshly pulled rows into history, field by field.
+
+    New values win where present; existing values survive where the new row is
+    empty. Replacing a day's row wholesale would let one endpoint hiccup (say,
+    daily_readiness returning nothing for a day that already had temperature
+    data) silently erase stored fields — and once the day left the re-pull
+    window, permanently.
+    """
     if new.empty:
         return existing.sort_values("day").reset_index(drop=True) if not existing.empty else existing
-    combined = pd.concat([existing, new], ignore_index=True)
-    # Later rows (the freshly pulled ones) win when a day appears twice.
-    combined = combined.drop_duplicates("day", keep="last")
-    return combined.sort_values("day").reset_index(drop=True)
+    if existing.empty:
+        return new.sort_values("day").reset_index(drop=True)
+
+    old_indexed = existing.set_index("day")
+    new_indexed = new.drop_duplicates("day", keep="last").set_index("day")
+    combined = new_indexed.combine_first(old_indexed)
+    return combined.sort_index().reset_index()
 
 
 def save_history(df: pd.DataFrame, path: Path) -> None:

@@ -40,14 +40,23 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      # Inputs go through env vars, never interpolated into the script text —
+      # direct ${{ inputs.* }} inside run: is an injection surface.
       - name: Update exclusions
+        env:
+          DAYS: ${{ inputs.date }}
+          REASON: ${{ inputs.reason }}
+          ACTION: ${{ inputs.action }}
         run: |
           python scripts/exclude_day.py \
-            --date "${{ inputs.date }}" \
-            --reason "${{ inputs.reason }}" \
-            --action "${{ inputs.action }}" | tee -a $GITHUB_STEP_SUMMARY
+            --date "$DAYS" \
+            --reason "$REASON" \
+            --action "$ACTION" | tee -a $GITHUB_STEP_SUMMARY
 
       - name: Commit exclusions
+        env:
+          DAYS: ${{ inputs.date }}
+          ACTION: ${{ inputs.action }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -55,6 +64,6 @@ jobs:
           if git diff --cached --quiet; then
             echo "No change (day already in that state)."
           else
-            git commit -m "data: ${{ inputs.action }} ${{ inputs.date }}"
+            git commit -m "data: $ACTION $DAYS"
             git push
           fi

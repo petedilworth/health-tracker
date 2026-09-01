@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
+import time
 from typing import Any, Iterator
 
 import requests
@@ -34,29 +35,29 @@ class OuraClient:
         self._verify = verify_tls
 
     def _get(self, url: str, params: dict[str, Any]) -> dict:
-        """GET with a short retry on transient failures (5xx / network)."""
+        """GET with retry on transient failures (5xx, network, 429).
+
+        Other 4xx are permanent (bad token, bad range) and fail immediately so
+        the real error surfaces instead of being retried into a timeout. 429 is
+        the exception: a rate limit is transient by definition, so a backfill
+        that trips Oura's limiter backs off rather than dying.
+        """
         last_error: Exception | None = None
         for attempt in range(MAX_RETRIES):
             try:
                 resp = self._session.get(
                     url, params=params, verify=self._verify, timeout=REQUEST_TIMEOUT
                 )
-                # 4xx are permanent (bad token, bad range) — fail immediately so
-                # the error is visible rather than retried into a timeout.
-                if 400 <= resp.status_code < 500:
-                    resp.raise_for_status()
                 resp.raise_for_status()
                 return resp.json()
             except (requests.HTTPError, requests.RequestException) as exc:
                 status = getattr(getattr(exc, "response", None), "status_code", None)
-                if status is not None and 400 <= status < 500:
+                if status is not None and 400 <= status < 500 and status != 429:
                     raise
                 last_error = exc
                 if attempt < MAX_RETRIES - 1:
                     wait = 2 ** (attempt + 1)
                     log.warning("Request failed (%s); retrying in %ss", exc, wait)
-                    import time
-
                     time.sleep(wait)
         raise RuntimeError(f"Oura request failed after {MAX_RETRIES} attempts") from last_error
 

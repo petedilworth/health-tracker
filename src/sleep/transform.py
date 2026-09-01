@@ -60,7 +60,10 @@ def _waketime_hour(wake: pd.Series, bedtime: pd.Series) -> pd.Series:
     hours = _wall_clock_hour(wake)
     # Add whole days until waking is after going to bed.
     shifted = hours.where(hours >= bedtime, hours + 24)
-    return shifted.where(shifted >= bedtime, shifted + 24)
+    shifted = shifted.where(shifted >= bedtime, shifted + 24)
+    # Without a bedtime there is no axis to anchor to — store nothing rather
+    # than a value shifted an arbitrary number of days.
+    return shifted.where(bedtime.notna())
 
 
 def _hours(series: pd.Series) -> pd.Series:
@@ -95,7 +98,14 @@ def sleep_sessions_to_frame(records: list[dict]) -> pd.DataFrame:
     # --- the main night ---
     nights = df[sleep_type == LONG_SLEEP].copy()
     if nights.empty:
-        return empty.merge(nap_totals, on="day", how="outer") if not nap_totals.empty else empty
+        if nap_totals.empty:
+            return empty
+        # Drop the empty frame's own nap column first: merging with it present
+        # collides into nap_sleep_h_x/_y suffixes and the nap hours get lost
+        # when downstream reindexes to the canonical columns.
+        return empty.drop(columns=["nap_sleep_h"]).merge(
+            nap_totals, on="day", how="outer"
+        )
 
     out = pd.DataFrame({"day": nights["day"]})
     out["bedtime"] = _bedtime_hour(nights["bedtime_start"])

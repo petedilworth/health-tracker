@@ -58,7 +58,9 @@ class Metric:
 # which is what makes the low-confidence components usable at all.
 SCORE_COMPONENTS: list[Metric] = [
     Metric("bedtime", "Bedtime", "clock", HIGH, 1.0, higher_is_better=False),
-    Metric("time_in_bed_h", "Time in bed", "h", HIGH, 1.0),
+    # Scored as total sleep vs dynamic need — crediting time lying awake would
+    # reward the wrong thing, so the duration component uses sleep achieved.
+    Metric("total_sleep_h", "Sleep duration", "h", HIGH, 1.0),
     Metric("timing", "Timing consistency", "score", HIGH, 1.0),
     Metric("hr_low", "Lowest heart rate", "bpm", HIGH, 1.0, higher_is_better=False),
     Metric("hrv", "HRV", "ms", HIGH, 1.0),
@@ -74,7 +76,7 @@ TOTAL_SCORE_WEIGHT = sum(m.weight for m in SCORE_COMPONENTS)  # 7.5
 
 # --- Tracked but not scored -------------------------------------------------
 TRACKED_METRICS: list[Metric] = [
-    Metric("total_sleep_h", "Total sleep", "h", HIGH),
+    Metric("time_in_bed_h", "Time in bed", "h", HIGH),
     Metric("light_h", "Light sleep", "h", LOW),
     Metric("latency_min", "Sleep latency", "min", MODERATE, higher_is_better=False),
     Metric("restless_periods", "Restless periods", "count", MODERATE,

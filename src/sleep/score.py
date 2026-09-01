@@ -64,12 +64,14 @@ def _z_to_percentile(z: pd.Series) -> pd.Series:
 # --- sleep need, debt, performance -----------------------------------------
 
 def sleep_need(daily: pd.DataFrame) -> pd.Series:
-    """Dynamic nightly sleep need, in hours.
+    """The stable sleep-need baseline, in hours.
 
-    Baseline is your own longer natural nights (rolling 180-day 90th percentile
-    of total sleep), which stands in for "unrestricted" sleep since we can't
-    detect alarm-free mornings. It then flexes up when you're carrying debt or
-    had an unusually active day.
+    Your own longer natural nights — the rolling 180-day NEED_QUANTILE of total
+    sleep — standing in for "unrestricted" sleep, since alarm-free mornings
+    can't be detected. Deliberately *not* adjusted for debt or activity: those
+    uplifts live in `sleep_recommended_h`, because folding them into the number
+    debt is measured against creates the feedback loop removed in the 2026-09
+    fix. This baseline is what debt accounting and performance % grade against.
     """
     total = daily["total_sleep_h"]
     baseline = (
@@ -160,9 +162,10 @@ def component_scores(daily: pd.DataFrame) -> pd.DataFrame:
         z_col = f"{key}_z"
 
         if key == "timing":
-            # Deviation from the trailing 7-night median bedtime. A short window
-            # deliberately, so this measures "was tonight like my recent nights"
-            # rather than restating SRI, which covers long-run regularity.
+            # Deviation from the trailing 7-day median bedtime (min 3 recorded
+            # nights). A short window deliberately, so this measures "was
+            # tonight like my recent nights" rather than restating SRI, which
+            # covers long-run regularity.
             bed = daily["bedtime"]
             median = bed.rolling(TIMING_WINDOW_NIGHTS, min_periods=3).median().shift(1)
             deviation = (bed - median).abs()
@@ -172,7 +175,7 @@ def component_scores(daily: pd.DataFrame) -> pd.DataFrame:
             ).fillna(False))
             raw = 100.0 - metrics.percentile_rank(deviation)
 
-        elif key == "time_in_bed_h":
+        elif key == "total_sleep_h":
             # Graded against dynamic need rather than a percentile: falling short
             # of what your body needed is bad in absolute terms, however typical.
             ratio = (daily["total_sleep_h"] / daily["sleep_need_h"]).clip(upper=1.0)

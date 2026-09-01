@@ -56,13 +56,13 @@ def add_rollups(daily: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
     for col in columns:
         if col not in daily.columns:
             continue
-        weekly = rolling_mean(daily[col], 7)
-        monthly = rolling_mean(daily[col], 30)
-        new[f"{col}_7d"] = weekly
-        new[f"{col}_30d"] = monthly
+        avg_7d = rolling_mean(daily[col], 7)
+        avg_30d = rolling_mean(daily[col], 30)
+        new[f"{col}_7d"] = avg_7d
+        new[f"{col}_30d"] = avg_30d
         new[f"{col}_pct"] = percentile_rank(daily[col])
-        new[f"{col}_pct_7d"] = percentile_rank(weekly)
-        new[f"{col}_pct_30d"] = percentile_rank(monthly)
+        new[f"{col}_pct_7d"] = percentile_rank(avg_7d)
+        new[f"{col}_pct_30d"] = percentile_rank(avg_30d)
     if not new:
         return daily.copy()
     return pd.concat([daily, pd.DataFrame(new, index=daily.index)], axis=1)

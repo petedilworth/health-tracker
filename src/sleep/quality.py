@@ -111,6 +111,16 @@ def detect_reliable_start(
     if after.empty:
         return None
     start = after.index.min()
+
+    # Guard: this detector exists to cut a bad *early era*, not to react to a
+    # recent slump. If most days before the proposed start were actually fine —
+    # e.g. an injury month years into good data — truncating there would erase
+    # good history, so refuse and keep everything.
+    before = credible[credible.index < start]
+    if len(before) and before.mean() > 0.5:
+        log.info("Ignoring candidate reliable start for %s at %s: %.0f%% of the "
+                 "earlier era is credible", column, start, before.mean() * 100)
+        return None
     log.info("Reliable start for %s detected at %s (median %.0f, threshold %.0f)",
              column, start, overall, threshold)
     return start
@@ -148,12 +158,21 @@ def find_anomalies(df: pd.DataFrame) -> pd.DataFrame:
     mismatch = span - d["time_in_bed_h"]
     bed_median = d["bedtime"].rolling(7, min_periods=3).median()
 
+    # A benign clock change must look like one on the calendar too: exactly
+    # ±1h AND in a month DST actually transitions (March for both EU and US,
+    # October EU, November US — this dataset contains both). A 1-hour recording
+    # discrepancy in July is a real anomaly, not a clock change.
+    is_1h = mismatch.abs().sub(1.0).abs() <= DST_TOLERANCE
+    months = pd.to_datetime(pd.Series(d["day"])).dt.month
+    dst_month = months.isin([3, 10, 11])
+    is_dst = is_1h & dst_month
+
     checks: dict[str, pd.Series] = {
         "waketime encoding broken (span ≈ -24h)": mismatch < -20,
-        "DST clock change (±1h) — benign": mismatch.abs().sub(1.0).abs() <= DST_TOLERANCE,
+        "DST clock change (±1h) — benign": is_dst,
         "span/duration mismatch >0.5h": (
             (mismatch.abs() > 0.5)
-            & (mismatch.abs().sub(1.0).abs() > DST_TOLERANCE)
+            & ~is_dst
             & (mismatch > -20)
         ),
         f"very short sleep (<{SHORT_SLEEP_H:g}h)": d["total_sleep_h"] < SHORT_SLEEP_H,

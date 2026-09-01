@@ -15,7 +15,7 @@ import logging
 import pandas as pd
 
 from . import config, flags, metrics, quality, regularity, score, seasonal, store
-from .schema import ALL_METRICS, SCORE_COMPONENTS
+from .schema import ALL_METRICS
 
 log = logging.getLogger("sleep.compute")
 
@@ -48,8 +48,11 @@ def compute(history: pd.DataFrame | None = None,
     daily = metrics.to_daily(history)
 
     # A clock change distorts wall-clock timing comparisons for that night only.
+    # Same rule as quality.find_anomalies: exactly ±1h AND a month DST actually
+    # transitions in (both EU and US changes appear in this data).
     span = daily["waketime"] - daily["bedtime"]
-    daily["dst_night"] = (span - daily["time_in_bed_h"]).abs().sub(1.0).abs() <= 0.1
+    is_1h = (span - daily["time_in_bed_h"]).abs().sub(1.0).abs() <= 0.1
+    daily["dst_night"] = is_1h & daily.index.month.isin([3, 10, 11])
 
     daily = seasonal.add_z_scores(daily)
     daily = daily.join(score.sleep_debt_and_need(daily))

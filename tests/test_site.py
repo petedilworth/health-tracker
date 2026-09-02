@@ -139,7 +139,7 @@ def test_sleep_score_explains_every_component():
     from sleep.schema import SCORE_COMPONENTS
     assert labels == {m.label for m in SCORE_COMPONENTS}
     weights = sum(c["weight"] for c in ex["components"])
-    assert weights == pytest.approx(8.5)
+    assert weights == pytest.approx(9.0)
     assert all(c["score"] is None or 0 <= c["score"] <= 100 for c in ex["components"])
 
 

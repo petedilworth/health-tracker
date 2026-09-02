@@ -57,14 +57,15 @@ class Metric:
 # measurement bias cancels out when comparing you against your own history,
 # which is what makes the low-confidence components usable at all.
 SCORE_COMPONENTS: list[Metric] = [
-    Metric("bedtime", "Bedtime", "clock", HIGH, 1.0, higher_is_better=False),
+    Metric("bedtime", "Bedtime", "clock", HIGH, 1.5, higher_is_better=False),
     # Scored as total sleep vs dynamic need — falling short of what the body
     # needed is bad in absolute terms, however typical.
     Metric("total_sleep_h", "Sleep duration", "h", HIGH, 1.0),
     # Deliberately overlaps with sleep duration (accepted 2026-09): time in bed
     # rewards the *opportunity* for sleep, duration rewards the outcome.
-    Metric("time_in_bed_h", "Time in bed", "h", HIGH, 1.0),
-    Metric("timing", "Timing consistency", "score", HIGH, 1.0),
+    Metric("time_in_bed_h", "Time in bed", "h", HIGH, 1.5),
+    # Downweighted 2026-09: overlaps with SRI, which covers regularity properly.
+    Metric("timing", "Timing consistency", "score", HIGH, 0.5),
     Metric("hr_low", "Lowest heart rate", "bpm", HIGH, 1.0, higher_is_better=False),
     Metric("hrv", "HRV", "ms", HIGH, 1.0),
     Metric("breaths_per_min", "Respiratory rate", "/min", HIGH, 1.0,
@@ -75,7 +76,7 @@ SCORE_COMPONENTS: list[Metric] = [
     Metric("deep_h", "Deep sleep", "h", LOW, 0.25),
 ]
 
-TOTAL_SCORE_WEIGHT = sum(m.weight for m in SCORE_COMPONENTS)  # 8.5
+TOTAL_SCORE_WEIGHT = sum(m.weight for m in SCORE_COMPONENTS)  # 9.0
 
 # --- Tracked but not scored -------------------------------------------------
 TRACKED_METRICS: list[Metric] = [

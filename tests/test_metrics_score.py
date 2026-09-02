@@ -199,7 +199,7 @@ def test_debt_does_not_inflate_its_own_target():
     assert rec.iloc[-1] > need.iloc[-1]
 
 
-def test_need_tracks_the_configured_quantile_of_actual_sleep():
+def test_need_is_the_configured_quantile_of_all_sleep():
     """Reads NEED_QUANTILE rather than hardcoding it, so recalibrating the
     baseline (P90 -> P75 in 2026-09, reviewed annually) doesn't break the test."""
     rng = np.random.default_rng(11)
@@ -207,7 +207,46 @@ def test_need_tracks_the_configured_quantile_of_actual_sleep():
     d = _daily(n=400, total_sleep_h=nights, nap_sleep_h=0.0, steps=np.nan)
     out = score.sleep_debt_and_need(d)
     expected = pd.Series(nights).quantile(score.NEED_QUANTILE)
-    assert out["sleep_need_h"].median() == pytest.approx(expected, abs=0.4)
+    assert out["sleep_need_h"].median() == pytest.approx(expected, abs=0.05)
+
+
+def test_need_is_flat_and_does_not_follow_a_declining_stretch():
+    """A trailing window would let six months of poor sleep lower the bar."""
+    good = np.full(300, 8.0)
+    bad = np.full(200, 5.5)          # a long decline at the end
+    d = _daily(n=500, total_sleep_h=np.concatenate([good, bad]),
+               nap_sleep_h=0.0, steps=np.nan)
+    need = score.sleep_debt_and_need(d)["sleep_need_h"]
+    assert need.nunique() == 1, "need must be one stable number, not a moving target"
+    # It must still reflect the good era rather than collapsing to the bad one.
+    assert need.iloc[-1] > 5.5
+
+
+# --- duration curve ---------------------------------------------------------
+
+def test_duration_curve_breakpoints():
+    s = score.duration_score(pd.Series([0.50, 0.65, 1.00, 1.20, 1.50]))
+    assert s.iloc[0] == 0                                  # far below floor
+    assert s.iloc[1] == pytest.approx(0, abs=1e-9)         # floor
+    assert s.iloc[2] == pytest.approx(score.DURATION_NEED_SCORE)   # meeting need
+    assert s.iloc[3] == pytest.approx(100)                 # ceiling
+    assert s.iloc[4] == 100                                # clipped beyond
+
+
+def test_duration_curve_is_monotonic():
+    r = pd.Series(np.linspace(0.4, 1.5, 200))
+    s = score.duration_score(r)
+    assert (s.diff().dropna() >= -1e-9).all()
+
+
+def test_duration_curve_no_longer_piles_up_at_the_ceiling():
+    """The old linear-capped curve scored a quarter of nights exactly 100."""
+    rng = np.random.default_rng(3)
+    # Ratios shaped like real data: median ~0.92, a quarter at or above 1.0.
+    ratios = pd.Series(rng.normal(0.92, 0.12, 2000)).clip(0.4, 1.6)
+    s = score.duration_score(ratios)
+    assert (s >= 99.5).mean() < 0.05
+    assert s.std() > 20
 
 
 def test_debt_holds_flat_across_a_gap():

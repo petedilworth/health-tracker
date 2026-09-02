@@ -2,9 +2,10 @@
 """Compare sleep-need baseline options against your actual history.
 
 The need baseline is a judgement call, not a measurement: it asks how much of
-your current sleep pattern is restriction versus requirement. This prints the
-same table for several candidate percentiles so the choice can be re-argued
-with current data.
+your sleep pattern is restriction versus requirement. It is the given
+percentile of ALL recorded sleep (not a rolling window, which would let a bad
+stretch lower the bar). This prints the same table for several candidate
+percentiles so the choice can be re-argued with current data.
 
 Run any time, or automatically each March by the recalibration-review workflow.
 

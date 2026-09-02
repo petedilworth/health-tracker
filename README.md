@@ -62,11 +62,13 @@ an absolute target.
 
 | Component | Weight | Confidence |
 |---|---|---|
-| Bedtime, sleep duration (vs need), time in bed, timing, HR low, HRV, respiratory rate | 1.0 each | High |
+| Bedtime, time in bed | 1.5 each | High |
+| Sleep duration (vs need), HR low, HRV, respiratory rate | 1.0 each | High |
+| Timing consistency | 0.5 | High |
 | Efficiency, restfulness | 0.5 each | Moderate |
 | REM, deep | 0.25 each | Low |
 
-Total weight 8.5, normalised to 0–100. Time in bed and sleep duration deliberately overlap — one rewards the opportunity for sleep, the other the outcome. Body temperature is tracked and flagged
+Total weight 9.0, normalised to 0–100. Time in bed and sleep duration deliberately overlap — one rewards the opportunity for sleep, the other the outcome. Body temperature is tracked and flagged
 but deliberately kept **out** of the score — it signals illness, not sleep
 quality.
 
@@ -134,7 +136,7 @@ Two conventions worth knowing:
 | Metric | What it is |
 |---|---|
 | **Sleep score** | Weighted composite, every component graded against your own history |
-| **Sleep need** | Stable baseline: rolling 180-day 75th percentile of your sleep (~7.2h) |
+| **Sleep need** | Stable baseline: 75th percentile of *all* your recorded sleep (~7.3h), not a rolling window — a bad stretch must not lower the bar |
 | **Recommended tonight** | Need plus debt repayment and an allowance for an active day |
 | **Sleep performance %** | Actual sleep ÷ need |
 | **Sleep debt** | Exponentially decaying cumulative shortfall (τ ≈ 7 days) — naps repay it |

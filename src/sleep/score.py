@@ -18,12 +18,11 @@ from . import metrics
 from .schema import SCORE_COMPONENTS, TOTAL_SCORE_WEIGHT
 
 # --- sleep need -------------------------------------------------------------
-NEED_WINDOW_DAYS = 180
 # Which percentile of your own sleep stands in for "unrestricted" need.
 #
-# Chosen 2026-09: P75 (~7.2h here) over P90 (~7.8h). At P90 the need was met on
+# Chosen 2026-09: P75 (~7.3h here) over P90 (~7.8h). At P90 the need was met on
 # only 9.3% of nights — a target hit one night in eleven stops being believed.
-# P75 lifts that to 22.5% while still leaving a real ~0.55h nightly gap.
+# P75 lifts that to 22.5% while still leaving a real nightly gap.
 #
 # The trade-off, recorded for the review: if true requirement is nearer 7.8h,
 # P75 encodes part of a chronic restriction as the requirement and will
@@ -31,6 +30,17 @@ NEED_WINDOW_DAYS = 180
 # first firing 2027-03-01.
 NEED_QUANTILE = 0.75
 NEED_MIN_H, NEED_MAX_H = 6.0, 10.0
+
+# --- duration scoring -------------------------------------------------------
+# How sleep duration maps to 0-100 against need. Piecewise, because a single
+# linear ramp capped at need piles nights up on the ceiling: need *is* your P75,
+# so you meet or beat it a quarter of the time by construction, and 26% of all
+# nights scored exactly 100 — the same compression that made Oura's score
+# uninformative. Meeting need is now a strong 85; the last 15 points are
+# reserved for genuinely exceeding it.
+DURATION_FLOOR_RATIO = 0.65     # ≤65% of need scores 0
+DURATION_NEED_SCORE = 85.0      # hitting need exactly
+DURATION_CEILING_RATIO = 1.20   # ≥120% of need scores 100
 DEBT_UPLIFT_PER_HOUR = 0.15
 DEBT_UPLIFT_CAP_H = 1.0
 ACTIVITY_UPLIFT_H = 0.25
@@ -66,21 +76,34 @@ def _z_to_percentile(z: pd.Series) -> pd.Series:
 def sleep_need(daily: pd.DataFrame) -> pd.Series:
     """The stable sleep-need baseline, in hours.
 
-    Your own longer natural nights — the rolling 180-day NEED_QUANTILE of total
-    sleep — standing in for "unrestricted" sleep, since alarm-free mornings
-    can't be detected. Deliberately *not* adjusted for debt or activity: those
-    uplifts live in `sleep_recommended_h`, because folding them into the number
-    debt is measured against creates the feedback loop removed in the 2026-09
-    fix. This baseline is what debt accounting and performance % grade against.
+    Your own longer natural nights — the NEED_QUANTILE of *all* recorded sleep —
+    standing in for "unrestricted" sleep, since alarm-free mornings can't be
+    detected. One flat number, recomputed as history accumulates.
+
+    Deliberately not a rolling window. A trailing window tracks recent
+    behaviour, so a stretch of poor sleep quietly lowers the bar it is judged
+    against: this dataset's need had drifted 7.27h -> 6.95h following a slipping
+    2026, making a bad run look better than it was. The same class of
+    self-defeating feedback as the debt loop fixed earlier, one layer up.
+
+    Also not adjusted for debt or activity — those uplifts live in
+    `sleep_recommended_h`. This baseline is what debt accounting and
+    performance % grade against.
     """
     total = daily["total_sleep_h"]
-    baseline = (
-        total.rolling(NEED_WINDOW_DAYS, min_periods=14)
-        .quantile(NEED_QUANTILE)
-        .ffill()
-        .clip(NEED_MIN_H, NEED_MAX_H)
-    )
-    return baseline.fillna(total.median() if total.notna().any() else 8.0)
+    if not total.notna().any():
+        return pd.Series(8.0, index=daily.index)
+    baseline = float(np.clip(total.quantile(NEED_QUANTILE), NEED_MIN_H, NEED_MAX_H))
+    return pd.Series(baseline, index=daily.index)
+
+
+def duration_score(ratio: float | pd.Series) -> pd.Series:
+    """Map slept/need to 0-100. See the DURATION_* constants for why piecewise."""
+    r = pd.Series(ratio) if not isinstance(ratio, pd.Series) else ratio
+    below = (r - DURATION_FLOOR_RATIO) / (1.0 - DURATION_FLOOR_RATIO) * DURATION_NEED_SCORE
+    above = DURATION_NEED_SCORE + (r - 1.0) / (DURATION_CEILING_RATIO - 1.0) * (
+        100.0 - DURATION_NEED_SCORE)
+    return below.where(r < 1.0, above).clip(0, 100)
 
 
 def sleep_debt_and_need(daily: pd.DataFrame) -> pd.DataFrame:
@@ -176,10 +199,9 @@ def component_scores(daily: pd.DataFrame) -> pd.DataFrame:
             raw = 100.0 - metrics.percentile_rank(deviation)
 
         elif key == "total_sleep_h":
-            # Graded against dynamic need rather than a percentile: falling short
-            # of what your body needed is bad in absolute terms, however typical.
-            ratio = (daily["total_sleep_h"] / daily["sleep_need_h"]).clip(upper=1.0)
-            raw = ((ratio - 0.5) / 0.5 * 100.0).clip(0, 100)
+            # Graded against need rather than a percentile: falling short of what
+            # your body needed is bad in absolute terms, however typical for you.
+            raw = duration_score(daily["total_sleep_h"] / daily["sleep_need_h"])
 
         elif z_col in daily.columns:
             # Drift-prone signals: compare against the recent seasonal baseline.

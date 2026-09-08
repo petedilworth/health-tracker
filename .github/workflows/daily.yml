@@ -2,8 +2,13 @@ name: Daily Sleep Analytics
 
 on:
   schedule:
-    # 13:00 UTC — the previous night has synced from the ring by then.
+    # Twice daily. The ring only syncs when the phone app opens, so a single
+    # run can land before last night's session exists: on 2026-09-08 the 13:00
+    # pull got Oura's daily score for the night but not the session behind it,
+    # and the site showed the night before as the latest. The 30-day lookback
+    # plus field-wise upsert makes the second pull idempotent.
     - cron: "0 13 * * *"
+    - cron: "0 20 * * *"
   workflow_dispatch: {}
 
 permissions:

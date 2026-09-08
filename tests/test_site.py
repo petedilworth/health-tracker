@@ -184,3 +184,97 @@ def test_build_site_writes_expected_files(tmp_path, monkeypatch):
     index = (tmp_path / "index.html").read_text()
     assert 'name="robots" content="noindex"' in index
     assert "assets/plotly.min.js" in index
+
+
+# --- data freshness -----------------------------------------------------------
+
+def _with_partial_tail():
+    """A history whose newest row has Oura's daily score but no sleep session.
+
+    This is the real 2026-09-08 case: Oura scores a night before the detailed
+    session syncs, so the newest ROW is a day later than the newest NIGHT.
+    """
+    daily, _ = _computed(n=200)
+    history = daily.reset_index()[[
+        "day", "bedtime", "waketime", "total_sleep_h", "time_in_bed_h",
+        "efficiency", "hr_low", "hrv", "breaths_per_min", "nap_sleep_h",
+        "steps", "temp_deviation", "oura_sleep_score", "restfulness",
+    ]].copy()
+    tail = {c: np.nan for c in history.columns}
+    tail.update({"day": history["day"].max() + pd.Timedelta(days=1),
+                 "oura_sleep_score": 86.0, "restfulness": 98.0,
+                 "temp_deviation": 0.13, "nap_sleep_h": 0.0})
+    history = pd.concat([history, pd.DataFrame([tail])], ignore_index=True)
+    return compute.compute(history, pd.DataFrame(columns=["day", "reason", "added_at"]))
+
+
+def test_summary_reports_the_last_night_not_the_last_row():
+    daily, summary = _with_partial_tail()
+    last_night = daily[daily["total_sleep_h"].notna()].index.max().date()
+    assert summary["data_through"] == str(last_night)
+    # The header used to end at the newest row, contradicting "latest night".
+    assert summary["date_range"].endswith(str(last_night))
+    assert str(daily.index.max().date()) != summary["data_through"]
+
+
+def test_partial_night_is_detected_and_described():
+    _, summary = _with_partial_tail()
+    partial = summary["latest_partial"]
+    assert partial is not None
+    assert partial["oura_score"] == 86.0
+    assert "total_sleep_h" in partial["missing"] and "hrv" in partial["missing"]
+
+
+def test_no_partial_night_when_the_newest_row_is_complete():
+    assert SUMMARY["latest_partial"] is None
+    assert SUMMARY["data_through"] == str(DAILY.index.max().date())
+
+
+def test_stats_flag_values_carried_onto_an_unrecorded_night():
+    daily, _ = _with_partial_tail()
+    # Debt carries forward across a night with no recording; the score does not.
+    carried = site._stats_payload(daily, _spec("sleep_debt_h"))
+    measured = site._stats_payload(daily, _spec("sleep_score"))
+    assert carried["carried"] is True
+    assert measured["carried"] is False
+    assert carried["day"] > measured["day"], "that day gap is what needs labelling"
+
+
+def test_every_payload_carries_freshness(tmp_path, monkeypatch):
+    monkeypatch.setattr(site.config, "DOCS_DIR", tmp_path)
+    site.build_site(DAILY, SUMMARY)
+
+    overview = json.loads((tmp_path / "data" / "overview.json").read_text())
+    assert overview["fresh"]["data_through"] == SUMMARY["data_through"]
+    assert overview["fresh"]["built"].endswith("+00:00"), "must be UTC"
+    assert "13:00" in overview["fresh"]["schedule"]
+
+    # Every metric page needs it too, so the stale banner works without a
+    # second fetch on the 26 detail pages.
+    for spec in site.PAGES:
+        payload = json.loads(
+            (tmp_path / "data" / "m" / f"{spec.slug}.json").read_text())
+        assert payload["fresh"]["data_through"] == SUMMARY["data_through"], spec.slug
+
+
+def test_shell_carries_the_stale_bar_and_freshness_line(tmp_path, monkeypatch):
+    monkeypatch.setattr(site.config, "DOCS_DIR", tmp_path)
+    site.build_site(DAILY, SUMMARY)
+    for page in ("index.html", "metrics/sleep-debt-h.html"):
+        html = (tmp_path / page).read_text()
+        assert 'id="stalebar"' in html, page
+        assert 'id="freshline"' in html, page
+
+
+def test_schedule_note_matches_the_workflow_cron():
+    """The footer tells you when to expect an update; a stale promise is worse
+    than none, so tie it to the actual cron entries."""
+    from pathlib import Path
+    import re
+    wf = (Path(__file__).resolve().parents[1]
+          / ".github" / "workflows" / "daily.yml").read_text()
+    hours = re.findall(r'cron:\s*"0 (\d{1,2}) \* \* \*"', wf)
+    assert hours, "no daily cron found in the workflow"
+    for h in hours:
+        assert f"{int(h):02d}:00" in site.SCHEDULE_NOTE, (
+            f"cron runs at {h}:00 UTC but the site does not say so")

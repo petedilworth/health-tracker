@@ -12,6 +12,7 @@ every percentile on the site reads "higher = a better night".
 
 from __future__ import annotations
 
+import datetime as dt
 import json
 import logging
 from dataclasses import dataclass
@@ -119,6 +120,9 @@ CARD_KEYS = ["opportunity_debt_h", "sleep_score", "sleep_performance_pct",
 
 JSON_BUDGET_KB = 300
 
+# Matches the cron entries in .github/workflows/daily.yml.
+SCHEDULE_NOTE = "updates daily at 13:00 and 20:00 UTC"
+
 
 # --- helpers ----------------------------------------------------------------
 
@@ -180,14 +184,37 @@ def _stats_payload(daily: pd.DataFrame, spec: PageSpec) -> dict:
     last = _latest_row(daily, key)
     if last is None:
         return {}
+    # Derived series (debt, need, SRI) are defined on nights with no recording,
+    # so their newest value can sit a day later than every measured metric. That
+    # is by design, but an unlabelled "Last night · 8 Sep" implies a measurement
+    # happened, which is what made the pages look inconsistent with each other.
+    carried = bool(pd.isna(last.get("total_sleep_h")))
     return {
         "day": last.name.strftime("%Y-%m-%d"),
+        "carried": carried,
         "value": _round(last[key]),
         "avg7": _round(last.get(f"{key}_7d")),
         "avg30": _round(last.get(f"{key}_30d")),
         "pct": _display_pct(last.get(f"{key}_pct"), hib),
         "pct7": _display_pct(last.get(f"{key}_pct_7d"), hib),
         "pct30": _display_pct(last.get(f"{key}_pct_30d"), hib),
+    }
+
+
+def _freshness(summary: dict) -> dict:
+    """When the data ends and when this build ran.
+
+    Both travel in every payload so any page can render them and warn on stale
+    data without a second fetch. `built` is what separates "the job has not run"
+    from "the job ran and there was nothing new"; the browser compares both
+    against its own clock, so the warning still fires if the site stops
+    rebuilding entirely.
+    """
+    return {
+        "built": dt.datetime.now(dt.timezone.utc).replace(
+            microsecond=0).isoformat(),
+        "data_through": summary.get("data_through"),
+        "schedule": SCHEDULE_NOTE,
     }
 
 
@@ -547,8 +574,10 @@ def _explain(daily: pd.DataFrame, spec: PageSpec) -> dict | None:
 
 # --- payload + page emission -------------------------------------------------
 
-def metric_payload(daily: pd.DataFrame, spec: PageSpec) -> dict:
+def metric_payload(daily: pd.DataFrame, spec: PageSpec,
+                   summary: dict | None = None) -> dict:
     payload = {
+        "fresh": _freshness(summary or {}),
         "meta": {
             "key": spec.key, "slug": spec.slug, "label": spec.label,
             "unit": spec.unit, "format": spec.fmt, "style": spec.style,
@@ -586,7 +615,9 @@ def overview_payload(daily: pd.DataFrame, summary: dict) -> dict:
     flag_row = next((r for _, r in recent.iterrows()
                      if pd.notna(r.get("flag_raised"))), None)
     return {
+        "fresh": _freshness(summary),
         "latest_day": summary.get("latest", {}).get("day"),
+        "partial": summary.get("latest_partial"),
         "cards": cards,
         "flag": {
             "raised": bool(flag_row["flag_raised"]) if flag_row is not None else False,
@@ -616,8 +647,10 @@ def _shell(title: str, body: str, root: str) -> str:
   <a href="{root}/index.html">Overview</a>
   <a href="{root}/metrics/index.html">All metrics</a>
 </nav>
+<div class="stalebar" id="stalebar" hidden></div>
 {body}
 <footer class="foot">
+  <p class="fresh" id="freshline"></p>
   <p>{PERCENTILE_LEGEND}</p>
   <p>{CONFIDENCE_FOOTER}</p>
   <p><a href="{root}/review/anomalies.md">Anomaly review</a> ·
@@ -730,7 +763,7 @@ def build_site(daily: pd.DataFrame, summary: dict) -> None:
         if spec.key not in daily.columns:
             log.warning("Skipping %s — column missing", spec.key)
             continue
-        payload = metric_payload(daily, spec)
+        payload = metric_payload(daily, spec, summary)
         path = docs / "data" / "m" / f"{spec.slug}.json"
         path.write_text(json.dumps(payload, separators=(",", ":")),
                         encoding="utf-8")

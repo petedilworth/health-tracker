@@ -14,20 +14,37 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from . import metrics
+from . import config, metrics
 from .schema import SCORE_COMPONENTS, TOTAL_SCORE_WEIGHT
 
 # --- sleep need -------------------------------------------------------------
-# Which percentile of your own sleep stands in for "unrestricted" need.
+# Need is estimated from nights when you had ADEQUATE OPPORTUNITY to sleep, not
+# from a percentile of all recorded sleep.
 #
-# Chosen 2026-09: P75 (~7.3h here) over P90 (~7.8h). At P90 the need was met on
-# only 9.3% of nights — a target hit one night in eleven stops being believed.
-# P75 lifts that to 22.5% while still leaving a real nightly gap.
+# Why (established 2026-09 against 2,484 nights): sleep here is opportunity
+# limited across the entire observed range and never saturates. Each extra hour
+# in bed buys ~48 minutes of sleep, still ~37 minutes an hour above 8.5h in bed,
+# and efficiency barely moves (88% at 7h in bed, 84% past 10h). Someone sleeping
+# at their need shows the opposite: extra opportunity turns into wake. So any
+# quantile of recorded sleep measures the SCHEDULE, not the requirement, and
+# inherits every restriction in it.
 #
-# The trade-off, recorded for the review: if true requirement is nearer 7.8h,
-# P75 encodes part of a chronic restriction as the requirement and will
-# under-report debt. Revisited annually by the recalibration-review workflow,
-# first firing 2027-03-01.
+# 2026 is the clean test. Median sleep fell to 6.59h, the worst in the record,
+# while sleep on nights with >=8h in bed rose to 7.70h, the best in the record.
+# A percentile anchor lowers the bar exactly when it should hold; this one held.
+#
+# The estimator is stable, which is the property that matters. Computed as an
+# expanding median at each year end it reads 7.32 / 7.38 / 7.41h for 2020 / 2023
+# / 2026, against 7.19 / 7.26 / 7.27h for the old P75.
+#
+# Honest limit: long nights in bed are exactly where Oura's wake detection is
+# weakest (wake specificity 29-52%), so this is biased upward by an unknown
+# amount. Hence the conservative 8h threshold rather than 8.5h (7.75h) or 9h
+# (8.20h). Revisited annually by the recalibration-review workflow.
+NEED_OPPORTUNITY_TIB_H = 8.0
+NEED_MIN_OPPORTUNITY_NIGHTS = 60
+# Fallback only, for a history with no time-in-bed column or too few qualifying
+# nights to estimate from. Kept at the P75 it used to be.
 NEED_QUANTILE = 0.75
 NEED_MIN_H, NEED_MAX_H = 6.0, 10.0
 
@@ -89,23 +106,36 @@ def _z_to_percentile(z: pd.Series) -> pd.Series:
 def sleep_need(daily: pd.DataFrame) -> pd.Series:
     """The stable sleep-need baseline, in hours.
 
-    Your own longer natural nights — the NEED_QUANTILE of *all* recorded sleep —
-    standing in for "unrestricted" sleep, since alarm-free mornings can't be
-    detected. One flat number, recomputed as history accumulates.
+    The median sleep you achieve on nights when you gave yourself adequate
+    opportunity — at least NEED_OPPORTUNITY_TIB_H in bed. One flat number,
+    recomputed as history accumulates. See the NEED_* constants for why this
+    rather than a percentile of all recorded sleep.
 
-    Deliberately not a rolling window. A trailing window tracks recent
-    behaviour, so a stretch of poor sleep quietly lowers the bar it is judged
-    against: this dataset's need had drifted 7.27h -> 6.95h following a slipping
-    2026, making a bad run look better than it was. The same class of
-    self-defeating feedback as the debt loop fixed earlier, one layer up.
+    Conditioning on opportunity is what stops the baseline following behaviour
+    down. A trailing window or a plain quantile both track recent nights, so a
+    stretch of poor sleep quietly lowers the bar it is judged against; this
+    dataset's need had once drifted 7.27h -> 6.95h that way. Conditioning on
+    opportunity instead means a tightening schedule removes nights from the
+    estimate rather than dragging it lower.
 
-    Also not adjusted for debt or activity — those uplifts live in
+    Falls back to the NEED_QUANTILE of all sleep when there is no time-in-bed
+    column, or fewer than NEED_MIN_OPPORTUNITY_NIGHTS qualifying nights.
+
+    Not adjusted for debt or activity — those uplifts live in
     `sleep_recommended_h`. This baseline is what debt accounting and
     performance % grade against.
     """
     total = daily["total_sleep_h"]
     if not total.notna().any():
         return pd.Series(8.0, index=daily.index)
+
+    tib = daily["time_in_bed_h"] if "time_in_bed_h" in daily.columns else None
+    if tib is not None:
+        generous = total.where(tib >= NEED_OPPORTUNITY_TIB_H)
+        if int(generous.notna().sum()) >= NEED_MIN_OPPORTUNITY_NIGHTS:
+            baseline = float(np.clip(generous.median(), NEED_MIN_H, NEED_MAX_H))
+            return pd.Series(baseline, index=daily.index)
+
     baseline = float(np.clip(total.quantile(NEED_QUANTILE), NEED_MIN_H, NEED_MAX_H))
     return pd.Series(baseline, index=daily.index)
 
@@ -193,6 +223,98 @@ def sleep_debt_and_need(daily: pd.DataFrame) -> pd.DataFrame:
     out["sleep_performance_pct"] = np.where(
         has_night, np.minimum(slept / out["sleep_need_h"] * 100.0, 100.0), np.nan
     )
+    return out
+
+
+# --- sleep opportunity ------------------------------------------------------
+
+def opportunity_yield(daily: pd.DataFrame) -> float:
+    """Minutes of sleep bought per extra hour in bed, fitted on your history.
+
+    Kept live rather than hardcoded so the site quotes the current number. The
+    slope is the whole argument for the opportunity metric: it is ~48 min/h
+    here, and it stays high (~37 min/h) even above 8.5h in bed, which is what
+    tells you the sleep system has not found its ceiling.
+    """
+    if "time_in_bed_h" not in daily.columns:
+        return float("nan")
+    pair = daily[["time_in_bed_h", "total_sleep_h"]].dropna()
+    if len(pair) < 30:
+        return float("nan")
+    slope = float(np.polyfit(pair["time_in_bed_h"], pair["total_sleep_h"], 1)[0])
+    return slope * 60.0
+
+
+def _target_waketime(daily: pd.DataFrame) -> pd.Series:
+    """Target waketime per night, as the same +24-shifted decimal hour as data.
+
+    Weekdays use the configured target. Weekends use the configured one if set,
+    otherwise your own trailing weekend median, so the number stays honest about
+    a lie-in you actually take rather than inventing a schedule for you.
+    """
+    idx = daily.index
+    weekend = pd.Series(idx.dayofweek >= 5, index=idx)
+
+    weekend_target = config.TARGET_WAKE_WEEKEND_H
+    if weekend_target is None:
+        observed = daily.get("waketime", pd.Series(np.nan, index=idx))
+        observed = observed.where(weekend).tail(365)
+        weekend_target = (float(observed.median()) if observed.notna().any()
+                          else config.TARGET_WAKE_WEEKDAY_H + 24.0)
+    elif weekend_target < 12.0:
+        weekend_target += 24.0          # after-midnight convention, as waketime
+
+    weekday_target = config.TARGET_WAKE_WEEKDAY_H
+    if weekday_target < 12.0:
+        weekday_target += 24.0
+
+    return pd.Series(np.where(weekend, weekend_target, weekday_target), index=idx)
+
+
+def sleep_opportunity(daily: pd.DataFrame) -> pd.DataFrame:
+    """Time-in-bed debt against your declared target. The controllable half.
+
+    Sleep debt grades something you do not directly control and that the ring
+    measures least well. This grades the opportunity you gave yourself: time in
+    bed, derived from bedtime and waketime, which is the high-confidence tier.
+    You can act on it tonight without lying awake doing arithmetic.
+
+    opportunity_debt_t = decay * opportunity_debt_{t-1} + (target - time_in_bed_t)
+
+    Same accumulator as sleep debt on purpose, so the two read alike: identical
+    DEBT_TAU_DAYS, symmetric so a long night in bed repays 1:1, unfloored so a
+    real surplus banks, and flat across nights with no recording.
+
+    The target is declared in config, not derived. Full sleep need would imply
+    8.52h in bed at this efficiency, met on 19.5% of nights with a best streak of
+    four; the declared 8.0h is met on 39.2% with a best streak of ten. A target
+    you clear two nights in five is a target you keep; see config for the note on
+    what that leaves on the table.
+    """
+    idx = daily.index
+    target = float(config.TARGET_TIB_H)
+    decay = float(np.exp(-1.0 / DEBT_TAU_DAYS))
+
+    tib = daily.get("time_in_bed_h", pd.Series(np.nan, index=idx))
+    recorded = tib.notna()
+
+    debts = np.empty(len(daily))
+    debt = 0.0
+    tib_vals = tib.to_numpy()
+    rec_vals = recorded.to_numpy()
+    for i in range(len(daily)):
+        if rec_vals[i]:
+            # Symmetric and unfloored, exactly as sleep debt.
+            debt = debt * decay + (target - tib_vals[i])
+        # else: no recording, so hold debt where it is.
+        debts[i] = debt
+
+    out = pd.DataFrame({
+        "opportunity_target_h": np.full(len(daily), target),
+        "opportunity_gap_h": (tib - target).to_numpy(),
+        "opportunity_debt_h": debts,
+    }, index=idx)
+    out["bedtime_target"] = (_target_waketime(daily) - target).to_numpy()
     return out
 
 

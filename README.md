@@ -136,10 +136,12 @@ Two conventions worth knowing:
 | Metric | What it is |
 |---|---|
 | **Sleep score** | Weighted composite, every component graded against your own history |
-| **Sleep need** | Stable baseline: 75th percentile of *all* your recorded sleep (~7.3h), not a rolling window — a bad stretch must not lower the bar |
+| **Sleep need** | Stable baseline: median sleep on nights you were in bed 8h or more (~7.4h). Conditioning on opportunity, not a percentile of all sleep, is what stops a tightening schedule lowering the bar |
 | **Recommended tonight** | Need plus debt repayment and an allowance for an active day |
 | **Sleep performance %** | Actual sleep ÷ need |
 | **Sleep debt** | Cumulative shortfall against need, decaying with a ~9.7-day half-life. Sleeping past need repays it 1:1 and can bank a surplus; naps count |
+| **Sleep opportunity** | Time in bed against your declared 8h target, with a nightly bedtime target |
+| **Sleep opportunity debt** | The same accumulator as sleep debt, run on time in bed. The controllable half: you choose when the light goes off, and the ring measures that directly |
 | **SRI** | Sleep Regularity Index, 0–100, over a trailing 30 days |
 | **Readiness** | HRV, resting HR, respiratory rate and last night's score |
 | **Health flag** | Fires when temperature or respiratory rate exceeds 2 SD from its seasonal baseline |

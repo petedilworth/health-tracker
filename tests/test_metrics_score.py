@@ -9,7 +9,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from sleep import flags, metrics, regularity, score, seasonal  # noqa: E402
+from sleep import config, flags, metrics, regularity, score, seasonal  # noqa: E402
 from sleep.schema import SCORE_COMPONENTS  # noqa: E402
 
 
@@ -229,15 +229,80 @@ def test_debt_does_not_inflate_its_own_target():
     assert rec.iloc[-1] > need.iloc[-1]
 
 
-def test_need_is_the_configured_quantile_of_all_sleep():
-    """Reads NEED_QUANTILE rather than hardcoding it, so recalibrating the
-    baseline (P90 -> P75 in 2026-09, reviewed annually) doesn't break the test."""
+def test_need_falls_back_to_the_quantile_without_time_in_bed():
+    """No time-in-bed column, so the opportunity estimator can't run.
+
+    Reads NEED_QUANTILE rather than hardcoding it, so recalibrating the fallback
+    doesn't break the test.
+    """
     rng = np.random.default_rng(11)
     nights = rng.normal(6.7, 0.95, 400).clip(4, 10)
     d = _daily(n=400, total_sleep_h=nights, nap_sleep_h=0.0, steps=np.nan)
     out = score.sleep_debt_and_need(d)
     expected = pd.Series(nights).quantile(score.NEED_QUANTILE)
     assert out["sleep_need_h"].median() == pytest.approx(expected, abs=0.05)
+
+
+def test_need_falls_back_when_too_few_generous_nights():
+    """A handful of long nights is not enough to estimate a requirement from."""
+    n = 400
+    rng = np.random.default_rng(5)
+    nights = rng.normal(6.5, 0.8, n).clip(4, 9)
+    tib = np.full(n, 7.0)
+    tib[:score.NEED_MIN_OPPORTUNITY_NIGHTS - 1] = 9.0    # one short of enough
+    d = _daily(n=n, total_sleep_h=nights, time_in_bed_h=tib,
+               nap_sleep_h=0.0, steps=np.nan)
+    need = score.sleep_debt_and_need(d)["sleep_need_h"]
+    expected = pd.Series(nights).quantile(score.NEED_QUANTILE)
+    assert need.iloc[-1] == pytest.approx(expected, abs=0.05)
+
+
+def test_need_is_the_median_sleep_on_generous_nights():
+    """The estimator conditions on opportunity, not on where a percentile lands."""
+    n = 400
+    rng = np.random.default_rng(17)
+    generous = rng.normal(7.8, 0.4, n // 2).clip(6, 10)   # room to sleep
+    cramped = rng.normal(6.0, 0.4, n - n // 2).clip(4, 8)  # no room
+    nights = np.empty(n)
+    nights[0::2], nights[1::2] = generous, cramped
+    tib = np.empty(n)
+    tib[0::2] = score.NEED_OPPORTUNITY_TIB_H + 0.7
+    tib[1::2] = score.NEED_OPPORTUNITY_TIB_H - 0.7
+    d = _daily(n=n, total_sleep_h=nights, time_in_bed_h=tib,
+               nap_sleep_h=0.0, steps=np.nan)
+
+    need = score.sleep_debt_and_need(d)["sleep_need_h"]
+    assert need.iloc[-1] == pytest.approx(float(np.median(generous)), abs=0.05)
+    # The cramped nights must not drag it down, as any plain quantile would.
+    assert need.iloc[-1] > pd.Series(nights).quantile(score.NEED_QUANTILE)
+
+
+def test_need_holds_when_the_schedule_tightens():
+    """The 2026 property, and the reason for conditioning on opportunity.
+
+    Real case: median sleep fell to the worst in the record while sleep on
+    nights with 8h in bed rose to the best. A percentile anchor lowers the bar
+    exactly when it should hold.
+    """
+    n, tail = 500, 150
+    rng = np.random.default_rng(23)
+    nights = rng.normal(7.2, 0.5, n).clip(5, 10)
+    tib = np.full(n, score.NEED_OPPORTUNITY_TIB_H + 0.5)
+    # A late stretch where he simply stops giving himself the time.
+    nights[-tail:] = rng.normal(5.8, 0.4, tail).clip(4, 7)
+    tib[-tail:] = score.NEED_OPPORTUNITY_TIB_H - 1.5
+
+    full = _daily(n=n, total_sleep_h=nights, time_in_bed_h=tib,
+                  nap_sleep_h=0.0, steps=np.nan)
+    before = _daily(n=n - tail, total_sleep_h=nights[:-tail],
+                    time_in_bed_h=tib[:-tail], nap_sleep_h=0.0, steps=np.nan)
+
+    # The cramped stretch contributes no qualifying nights, so it moves nothing.
+    assert (score.sleep_need(full).iloc[-1]
+            == pytest.approx(float(score.sleep_need(before).iloc[-1]), abs=1e-9))
+    # A quantile of all sleep, the old behaviour, does follow the schedule down.
+    assert (pd.Series(nights).quantile(score.NEED_QUANTILE)
+            < pd.Series(nights[:-tail]).quantile(score.NEED_QUANTILE) - 0.1)
 
 
 def test_need_is_flat_and_does_not_follow_a_declining_stretch():
@@ -250,6 +315,84 @@ def test_need_is_flat_and_does_not_follow_a_declining_stretch():
     assert need.nunique() == 1, "need must be one stable number, not a moving target"
     # It must still reflect the good era rather than collapsing to the bad one.
     assert need.iloc[-1] > 5.5
+
+
+# --- sleep opportunity ------------------------------------------------------
+
+def _opp(n=120, tib=8.0, start="2023-01-02"):
+    """A weekday-anchored frame; 2023-01-02 is a Monday."""
+    return _daily(n=n, start=start, time_in_bed_h=tib, waketime=31.0)
+
+
+def test_opportunity_gap_is_time_in_bed_against_the_target():
+    out = score.sleep_opportunity(_opp(n=10, tib=7.25))
+    target = config.TARGET_TIB_H
+    assert (out["opportunity_target_h"] == target).all()
+    assert out["opportunity_gap_h"].iloc[-1] == pytest.approx(7.25 - target)
+
+
+def test_opportunity_debt_accumulates_then_repays():
+    n = 200
+    tib = np.full(n, config.TARGET_TIB_H)
+    tib[40:60] = config.TARGET_TIB_H - 2.0        # twenty cramped nights
+    debt = score.sleep_opportunity(_opp(n=n, tib=tib))["opportunity_debt_h"]
+
+    assert debt.iloc[59] > debt.iloc[39], "cramped nights build debt"
+    assert debt.iloc[39] == pytest.approx(0.0, abs=1e-9), "on target means no debt"
+    # Sitting exactly on target afterwards, everything later is pure decay.
+    assert debt.iloc[100] < debt.iloc[59] * 0.2
+
+
+def test_opportunity_debt_is_symmetric_and_unfloored():
+    """Extra time in bed repays 1:1, and a real surplus banks. Same rule as
+    sleep debt, so the two metrics read alike."""
+    n = 120
+    debt = score.sleep_opportunity(
+        _opp(n=n, tib=config.TARGET_TIB_H + 1.0))["opportunity_debt_h"]
+    assert debt.iloc[-1] < 0
+    assert debt.iloc[-1] == pytest.approx(
+        -1.0 / (1 - np.exp(-1 / score.DEBT_TAU_DAYS)), abs=0.05)
+
+
+def test_opportunity_debt_decay_matches_tau():
+    n = 160
+    tib = np.full(n, config.TARGET_TIB_H)
+    tib[40:50] = config.TARGET_TIB_H - 3.0
+    debt = score.sleep_opportunity(_opp(n=n, tib=tib))["opportunity_debt_h"]
+    peak = debt.iloc[49]
+    assert peak > 0
+    assert debt.iloc[59] / peak == pytest.approx(np.exp(-10 / score.DEBT_TAU_DAYS))
+
+
+def test_opportunity_debt_holds_flat_across_a_gap():
+    """An unworn ring is not evidence you went to bed early."""
+    n = 80
+    tib = np.full(n, config.TARGET_TIB_H - 1.5)
+    tib[40:50] = np.nan
+    debt = score.sleep_opportunity(_opp(n=n, tib=tib))["opportunity_debt_h"]
+    assert debt.iloc[40:50].nunique() == 1
+    assert debt.iloc[49] == pytest.approx(debt.iloc[39])
+
+
+def test_bedtime_target_is_the_configured_wake_minus_the_target():
+    """06:15 up, 8h in bed, so lights out at 22:15 on a weekday."""
+    out = score.sleep_opportunity(_opp(n=7))
+    monday = out.index[0]
+    assert monday.dayofweek == 0
+    expected = config.TARGET_WAKE_WEEKDAY_H + 24.0 - config.TARGET_TIB_H
+    assert out["bedtime_target"].iloc[0] == pytest.approx(expected)
+    assert expected % 24 == pytest.approx(22.25)      # 22:15
+    # Weekends fall back to the observed lie-in rather than inventing a schedule.
+    saturday = out.index.dayofweek == 5
+    assert out.loc[saturday, "bedtime_target"].iloc[0] == pytest.approx(31.0 - 8.0)
+
+
+def test_opportunity_yield_recovers_a_known_slope():
+    n = 300
+    rng = np.random.default_rng(9)
+    tib = rng.normal(8.0, 0.8, n).clip(6, 11)
+    d = _daily(n=n, time_in_bed_h=tib, total_sleep_h=0.8 * tib + 0.4)
+    assert score.opportunity_yield(d) == pytest.approx(48.0, abs=0.5)
 
 
 # --- duration curve ---------------------------------------------------------

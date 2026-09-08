@@ -275,7 +275,8 @@
           "<td class='num'>" + (c.score == null ? "—" : Math.round(c.score)) + "</td>" +
           "<td class='num'>" + c.weight + "</td><td>" + conf + "</td></tr>";
       }
-      return "<tr" + (c.result ? " class='result'" : "") + "><td>" + c.label +
+      var n = c.note ? ' <span class="sub">' + c.note + "</span>" : "";
+      return "<tr" + (c.result ? " class='result'" : "") + "><td>" + c.label + n +
         "</td><td class='num'>" + val + "</td></tr>";
     }).join("");
     return "<h2>How it's calculated</h2><p>" + ex.text + "</p>" +

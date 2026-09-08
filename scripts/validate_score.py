@@ -12,11 +12,12 @@ import sys
 import warnings
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from sleep import compute  # noqa: E402
+from sleep import compute, score  # noqa: E402
 from sleep.schema import SCORE_COMPONENTS  # noqa: E402
 
 warnings.filterwarnings("ignore")
@@ -107,7 +108,8 @@ def main() -> None:
 
     # 4. Percentile behaviour
     line("5. Percentile columns")
-    for col in ["sleep_score_pct", "sleep_debt_h_pct", "sri_pct"]:
+    for col in ["sleep_score_pct", "sleep_debt_h_pct",
+                "opportunity_debt_h_pct", "sri_pct"]:
         if col in daily.columns:
             p = daily[col].dropna()
             if not p.empty:
@@ -122,6 +124,20 @@ def main() -> None:
     # median would mean the need baseline is set too low to be a target.
     checks.append(("sleep_debt_h median > 0", bool(debt.median() > 0),
                    f"min {debt.min():.2f}, median {debt.median():.2f}, max {debt.max():.2f}"))
+    if "opportunity_debt_h" in daily.columns:
+        opp = daily["opportunity_debt_h"].dropna()
+        gap = daily["opportunity_gap_h"].dropna()
+        weight = 1.0 / (1.0 - float(np.exp(-1.0 / score.DEBT_TAU_DAYS)))
+        checks.append(("opportunity debt median > 0", bool(opp.median() > 0),
+                       f"median {opp.median():.2f}h "
+                       f"({opp.median() / weight * 60:.0f} min/night), "
+                       f"latest {opp.iloc[-1]:.2f}h "
+                       f"({opp.iloc[-1] / weight * 60:.0f} min/night)"))
+        # A target nobody ever meets stops being believed; one met most nights
+        # is not a target. Somewhere in between is the point.
+        met = float((gap >= 0).mean() * 100)
+        checks.append(("target met on 20-60% of nights", 20 <= met <= 60,
+                       f"{met:.1f}% of {len(gap)} nights"))
     checks.append(("sleep_need_h within 6-11h", bool(need.between(6, 11).all()),
                    f"min {need.min():.2f}, median {need.median():.2f}, max {need.max():.2f}"))
     checks.append(("sri within 0-100", bool(sri.between(0, 100).all()),

@@ -11,6 +11,8 @@ construction.
 
 from __future__ import annotations
 
+import math
+
 import numpy as np
 import pandas as pd
 
@@ -64,13 +66,33 @@ ACTIVITY_UPLIFT_H = 0.25
 ACTIVITY_QUANTILE = 0.80
 
 # --- debt -------------------------------------------------------------------
-# Half-life ~9.7 days. Set from the recovery literature rather than taste:
-# Kitamura et al. (2016) found ~10h of accumulated debt needed roughly four
-# days of genuinely unrestricted sleep to clear, and the commonly cited
-# practical rate (one extra hour a night) puts 10h at about ten days. tau=14
-# lands between the two; the earlier tau=7 cleared debt faster than any
-# published estimate supports.
-DEBT_TAU_DAYS = 14.0
+# The tunable is the half-life, because that is the part a person can reason
+# about; tau is derived from it.
+#
+# Set 2026-09 from lived experience, NOT from the recovery literature, and the
+# distinction matters. One bad night gets absorbed, two or three compound, and a
+# few solid nights restore — that is a ~3-day half-life. The previous 9.7 days
+# came from recovery studies (Kitamura 2016, Banks 2010) and was too slow to
+# reinforce anything: a good week barely moved the number, which defeats the
+# point of a tool built to change behaviour.
+#
+# What this trades away, stated plainly: subjective recovery outpaces objective
+# recovery. Van Dongen et al. (2003) found subjective sleepiness plateaus while
+# PVT deficits keep accumulating; Belenky et al. (2003) found three recovery
+# nights after a week of restriction did not restore performance. So this number
+# will read clear before function fully is. The 30-day average on the chart is
+# the honest long-run read, and it is actually *better* at a short half-life: it
+# correlates 0.91 with the true 30-day shortfall here, against 0.77 at 9.7 days,
+# because the slow series was so smoothed that its own 30-day mean lagged.
+#
+# Checked before changing: the half-life is almost purely a recovery-speed dial.
+# Three consecutive nights 2h short peak at 4.81h here against 5.60h at 9.7 days,
+# so bad nights still cost what they cost. Only the time to work them off moves,
+# from 25 nights to 7. The series stays smooth (lag-1 autocorrelation 0.83), and
+# the DEBT_UPLIFT_CAP_H stops being pinned — it bound on 86% of nights at 9.7
+# days, and on 1.7% at three.
+DEBT_HALF_LIFE_DAYS = 3.0
+DEBT_TAU_DAYS = DEBT_HALF_LIFE_DAYS / math.log(2)      # ~4.33
 # Sleeping beyond need repays debt 1:1, and debt may go negative — a genuine
 # surplus. Sleep banking is real: Rupp & Wesensten (2009) showed a week of
 # extended sleep before restriction bought a 2-3 day grace period before

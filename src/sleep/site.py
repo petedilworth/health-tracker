@@ -237,6 +237,19 @@ def _clock(hour) -> str:
     return f"{display}:{minute:02d} {suffix}"
 
 
+def _nights_to_clear(debt, threshold: float = 1.0) -> int | None:
+    """Nights of pure decay to bring `debt` under `threshold`, or None if under.
+
+    The direct answer to "if I do this, when do I get the reward?". Assumes only
+    that you hit your target from tonight on: no invented catch-up, since a night
+    above target clears it faster than this says.
+    """
+    if debt is None or pd.isna(debt) or debt <= threshold:
+        return None
+    decay = float(np.exp(-1.0 / score.DEBT_TAU_DAYS))
+    return int(np.ceil(np.log(threshold / float(debt)) / np.log(decay)))
+
+
 def _target_streaks(daily: pd.DataFrame) -> tuple[int, int, int]:
     """(current streak, best streak ever, nights on target in the last year).
 
@@ -361,7 +374,9 @@ def _explain(daily: pd.DataFrame, spec: PageSpec) -> dict | None:
                 f"debt = {decay:.3f} × yesterday's debt + (target − time in bed), "
                 f"symmetric so a long night in bed repays it hour for hour, and "
                 f"unfloored so a real surplus banks. A night with no recording "
-                f"holds it where it is. The accumulator spans about "
+                f"holds it where it is. Standing debt halves in "
+                f"{score.DEBT_HALF_LIFE_DAYS:g} nights, so a good run pays off "
+                f"while you can still feel it. The accumulator spans about "
                 f"{weight:.0f} nights, so divide by that for the readable number: "
                 f"you are currently around {per_night:.0f} minutes short per "
                 f"night, which is one bedtime change rather than a mountain."
@@ -376,6 +391,9 @@ def _explain(daily: pd.DataFrame, spec: PageSpec) -> dict | None:
                 _comp("Nights on target now", streak, "f0",
                       note=f"best run ever {best_streak}; "
                            f"{last_year} nights on target in the last year"),
+                _comp("Nights on target to clear it", _nights_to_clear(debt), "f0",
+                      note="to bring it under an hour, hitting target every "
+                           "night; a night past target clears it faster"),
                 _comp("= Opportunity debt", debt, "h1", result=True),
             ],
         }
@@ -388,10 +406,14 @@ def _explain(daily: pd.DataFrame, spec: PageSpec) -> dict | None:
             "text": (
                 f"Accumulated shortfall against your sleep need, with old debt "
                 f"fading: each night, debt = {decay:.3f} × yesterday's debt + "
-                f"(need − sleep). The decay alone halves standing debt in about "
-                f"{score.DEBT_TAU_DAYS * np.log(2):.1f} days. It is set from the "
-                f"recovery literature, where clearing roughly ten hours of debt "
-                f"takes days of extended sleep, not one long lie-in. The "
+                f"(need − sleep). The decay alone halves standing debt in "
+                f"{score.DEBT_HALF_LIFE_DAYS:g} nights. That is tuned to how "
+                f"recovery actually feels — one bad night absorbed, two or three "
+                f"compounding, a few solid nights restoring — rather than to the "
+                f"recovery literature, which finds objective recovery slower than "
+                f"the subjective kind. So treat a cleared number as encouraging "
+                f"rather than as proof, and read the 30-day line on the chart for "
+                f"the long-run picture. The "
                 f"subtraction is symmetric and has no floor: sleeping past your "
                 f"need repays debt hour for hour, and a sustained surplus can "
                 f"carry debt below zero, because banked sleep genuinely buys "
@@ -413,6 +435,9 @@ def _explain(daily: pd.DataFrame, spec: PageSpec) -> dict | None:
                 _comp("Structural floor", (need - float(daily["total_sleep_h"].median()))
                       / (1 - decay), "h1",
                       note="where debt sits if you keep sleeping your median"),
+                _comp("Nights at need to clear it", _nights_to_clear(last.get(key)), "f0",
+                      note="to bring it under an hour, sleeping to need every "
+                           "night; sleeping past need clears it faster"),
                 _comp("= Debt now", last.get(key), "h1", result=True),
             ],
         }

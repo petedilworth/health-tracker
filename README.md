@@ -139,7 +139,7 @@ Two conventions worth knowing:
 | **Sleep need** | Stable baseline: median sleep on nights you were in bed 8h or more (~7.4h). Conditioning on opportunity, not a percentile of all sleep, is what stops a tightening schedule lowering the bar |
 | **Recommended tonight** | Need plus debt repayment and an allowance for an active day |
 | **Sleep performance %** | Actual sleep ÷ need |
-| **Sleep debt** | Cumulative shortfall against need, decaying with a ~9.7-day half-life. Sleeping past need repays it 1:1 and can bank a surplus; naps count |
+| **Sleep debt** | Cumulative shortfall against need, halving every 3 nights. That half-life is tuned to felt recovery so a good run visibly pays off, not to the recovery literature, which finds objective recovery slower. Sleeping past need repays it 1:1 and can bank a surplus; naps count |
 | **Sleep opportunity** | Time in bed against your declared 8h target, with a nightly bedtime target |
 | **Sleep opportunity debt** | The same accumulator as sleep debt, run on time in bed. The controllable half: you choose when the light goes off, and the ring measures that directly |
 | **SRI** | Sleep Regularity Index, 0–100, over a trailing 30 days |

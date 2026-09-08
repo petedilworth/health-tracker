@@ -191,8 +191,12 @@ def test_debt_decay_rate_matches_tau():
     peak = debt.iloc[49]
     assert peak > 0
     assert debt.iloc[59] / peak == pytest.approx(np.exp(-10 / score.DEBT_TAU_DAYS))
-    # Half-life is a shade under ten nights.
-    assert score.DEBT_TAU_DAYS * np.log(2) == pytest.approx(9.7, abs=0.1)
+    # tau is derived from the half-life, which is the tunable a human reasons
+    # about. Asserting the relation, not the value, so retuning never breaks it.
+    assert (score.DEBT_TAU_DAYS * np.log(2)
+            == pytest.approx(score.DEBT_HALF_LIFE_DAYS))
+    halved = debt.iloc[49 + round(score.DEBT_HALF_LIFE_DAYS)]
+    assert halved == pytest.approx(peak * 0.5, rel=0.1)
 
 
 def test_naps_pay_down_debt():
@@ -222,7 +226,12 @@ def test_debt_does_not_inflate_its_own_target():
     out = score.sleep_debt_and_need(d)
 
     need, rec = out["sleep_need_h"], out["sleep_recommended_h"]
-    assert out["sleep_debt_h"].iloc[-1] > 2, "setup should build real debt"
+    # The debt level scales with the half-life, so guard against half the
+    # theoretical steady state rather than a number tuned to one setting.
+    weight = 1.0 / (1.0 - np.exp(-1 / score.DEBT_TAU_DAYS))
+    shortfall = float((need - pd.Series(nights, index=d.index)).mean())
+    assert out["sleep_debt_h"].iloc[-1] > 0.5 * shortfall * weight, \
+        "setup should build real debt"
     # The measurement baseline must not drift upward as debt accumulates.
     assert need.iloc[-1] == pytest.approx(need.iloc[150], abs=0.3)
     # Tonight's recommendation may exceed it — that's the actionable number.
@@ -385,6 +394,19 @@ def test_bedtime_target_is_the_configured_wake_minus_the_target():
     # Weekends fall back to the observed lie-in rather than inventing a schedule.
     saturday = out.index.dayofweek == 5
     assert out.loc[saturday, "bedtime_target"].iloc[0] == pytest.approx(31.0 - 8.0)
+
+
+def test_nights_to_clear_matches_the_closed_form():
+    from sleep import site
+    decay = np.exp(-1 / score.DEBT_TAU_DAYS)
+    assert site._nights_to_clear(None) is None
+    assert site._nights_to_clear(0.4) is None
+    assert site._nights_to_clear(1.0) is None, "already under the threshold"
+    for debt in (2.0, 5.91, 12.0):
+        assert site._nights_to_clear(debt) == int(
+            np.ceil(np.log(1.0 / debt) / np.log(decay)))
+    # A shorter half-life must always clear faster.
+    assert site._nights_to_clear(6.0) < site._nights_to_clear(6.0, threshold=0.5)
 
 
 def test_opportunity_yield_recovers_a_known_slope():

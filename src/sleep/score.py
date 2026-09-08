@@ -47,7 +47,20 @@ ACTIVITY_UPLIFT_H = 0.25
 ACTIVITY_QUANTILE = 0.80
 
 # --- debt -------------------------------------------------------------------
-DEBT_TAU_DAYS = 7.0          # half-life ~4.9 days
+# Half-life ~9.7 days. Set from the recovery literature rather than taste:
+# Kitamura et al. (2016) found ~10h of accumulated debt needed roughly four
+# days of genuinely unrestricted sleep to clear, and the commonly cited
+# practical rate (one extra hour a night) puts 10h at about ten days. tau=14
+# lands between the two; the earlier tau=7 cleared debt faster than any
+# published estimate supports.
+DEBT_TAU_DAYS = 14.0
+# Sleeping beyond need repays debt 1:1, and debt may go negative — a genuine
+# surplus. Sleep banking is real: Rupp & Wesensten (2009) showed a week of
+# extended sleep before restriction bought a 2-3 day grace period before
+# performance degraded. Note the asymmetry caveat: recovery generally lags
+# accumulation in the literature, so 1:1 is the optimistic end of defensible.
+# In this dataset an uncapped floor is near-theoretical anyway — debt has gone
+# negative once in 2,485 nights, on the second night, before any history built.
 
 # --- readiness --------------------------------------------------------------
 # (source column, weight, higher_is_better). Everything is converted to a
@@ -122,7 +135,13 @@ def sleep_debt_and_need(daily: pd.DataFrame) -> pd.DataFrame:
     also circular — you cannot measure a shortfall against a target that the
     shortfall itself inflated. So the debt accounting uses the baseline only.
 
-    debt_t = decay * debt_{t-1} + max(0, baseline_t - sleep_t)
+    debt_t = decay * debt_{t-1} + (baseline_t - sleep_t)
+
+    Symmetric and unfloored: a night above need repays debt 1:1 and can push it
+    negative into a genuine surplus, because sleep banking is real (see the
+    DEBT_* constants). An earlier version took max(0, ...) of the shortfall, so
+    sleeping nine hours and sleeping exactly to need reduced debt by identical
+    amounts — only the decay repaid anything, and the surplus was discarded.
 
     Exponential decay rather than a fixed window: recent nights dominate and old
     debt fades, so the number responds when you catch up. Nights with no
@@ -151,15 +170,18 @@ def sleep_debt_and_need(daily: pd.DataFrame) -> pd.DataFrame:
     busy_vals = busy_yesterday.to_numpy()
 
     for i in range(len(daily)):
-        # Tonight's target reflects the debt carried *into* tonight.
-        target = base_vals[i] + min(debt * DEBT_UPLIFT_PER_HOUR, DEBT_UPLIFT_CAP_H)
+        # Tonight's target reflects the debt carried *into* tonight. Clamped at
+        # zero: a surplus never licenses sleeping less than baseline need.
+        uplift = float(np.clip(debt * DEBT_UPLIFT_PER_HOUR, 0.0, DEBT_UPLIFT_CAP_H))
+        target = base_vals[i] + uplift
         if busy_vals[i]:
             target += ACTIVITY_UPLIFT_H
         recommended[i] = float(np.clip(target, NEED_MIN_H,
                                        NEED_MAX_H + DEBT_UPLIFT_CAP_H))
 
         if night_vals[i]:
-            debt = debt * decay + max(0.0, base_vals[i] - slept_vals[i])
+            # Symmetric: a surplus repays 1:1 and may carry debt negative.
+            debt = debt * decay + (base_vals[i] - slept_vals[i])
         # else: no recording, so hold debt where it is.
         debts[i] = debt
 

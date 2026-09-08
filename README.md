@@ -139,7 +139,7 @@ Two conventions worth knowing:
 | **Sleep need** | Stable baseline: 75th percentile of *all* your recorded sleep (~7.3h), not a rolling window — a bad stretch must not lower the bar |
 | **Recommended tonight** | Need plus debt repayment and an allowance for an active day |
 | **Sleep performance %** | Actual sleep ÷ need |
-| **Sleep debt** | Exponentially decaying cumulative shortfall (τ ≈ 7 days) — naps repay it |
+| **Sleep debt** | Cumulative shortfall against need, decaying with a ~9.7-day half-life. Sleeping past need repays it 1:1 and can bank a surplus; naps count |
 | **SRI** | Sleep Regularity Index, 0–100, over a trailing 30 days |
 | **Readiness** | HRV, resting HR, respiratory rate and last night's score |
 | **Health flag** | Fires when temperature or respiratory rate exceeds 2 SD from its seasonal baseline |

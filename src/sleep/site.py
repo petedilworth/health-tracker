@@ -275,16 +275,22 @@ def _explain(daily: pd.DataFrame, spec: PageSpec) -> dict | None:
             "text": (
                 f"Accumulated shortfall against your sleep need, with old debt "
                 f"fading: each night, debt = {decay:.3f} × yesterday's debt + "
-                f"max(0, need − sleep). That decay means debt halves in about "
-                f"{score.DEBT_TAU_DAYS * np.log(2):.1f} days if you sleep to need. "
-                f"Naps count as sleep. A night with no recording holds debt where "
-                f"it is — an unworn ring is not evidence you caught up."
+                f"(need − sleep). The decay alone halves standing debt in about "
+                f"{score.DEBT_TAU_DAYS * np.log(2):.1f} days. It is set from the "
+                f"recovery literature, where clearing roughly ten hours of debt "
+                f"takes days of extended sleep, not one long lie-in. The "
+                f"subtraction is symmetric and has no floor: sleeping past your "
+                f"need repays debt hour for hour, and a sustained surplus can "
+                f"carry debt below zero, because banked sleep genuinely buys "
+                f"resilience. Naps count as sleep. A night with no recording "
+                f"holds debt where it is — an unworn ring is not evidence you "
+                f"caught up."
             ),
-            "formula": f"debt = {decay:.3f} × previous + max(0, need − slept)",
+            "formula": f"debt = {decay:.3f} × previous + (need − slept)",
             "components": [
                 _comp("Sleep need", need, "h1"),
                 _comp("Slept (night + naps)", slept, "h1"),
-                _comp("Last night's shortfall", max(0.0, need - slept), "h1"),
+                _comp("Shortfall vs need (negative = surplus)", need - slept, "h1"),
                 _comp("= Debt now", last.get(key), "h1", result=True),
             ],
         }
@@ -293,7 +299,8 @@ def _explain(daily: pd.DataFrame, spec: PageSpec) -> dict | None:
         need = last.get("sleep_need_h")
         debt = last.get("sleep_debt_h") or 0
         rec = last.get("sleep_recommended_h")
-        debt_up = min(debt * score.DEBT_UPLIFT_PER_HOUR, score.DEBT_UPLIFT_CAP_H)
+        debt_up = min(max(0.0, debt * score.DEBT_UPLIFT_PER_HOUR),
+                      score.DEBT_UPLIFT_CAP_H)
         act_up = max(0.0, (rec or 0) - (need or 0) - debt_up)
         return {
             "text": (
@@ -311,9 +318,10 @@ def _explain(daily: pd.DataFrame, spec: PageSpec) -> dict | None:
                 f"{int(score.ACTIVITY_UPLIFT_H * 60)} min after a top-quintile "
                 f"step day. Keeping those uplifts out of the baseline avoids a "
                 f"feedback loop where debt inflates the target it's measured "
-                f"against."
+                f"against. The repayment never goes below zero, so a sleep "
+                f"surplus is never a licence to sleep less than baseline."
             ),
-            "formula": "recommended = need + min(0.15 × debt, 1h) + activity",
+            "formula": "recommended = need + clamp(0.15 × debt, 0, 1h) + activity",
             "components": [
                 _comp("Baseline need", need, "h1"),
                 _comp("Debt repayment", debt_up, "h1"),

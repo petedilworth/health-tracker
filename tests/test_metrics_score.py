@@ -154,15 +154,45 @@ def test_debt_accumulates_then_decays():
     peak = debt.iloc[69]
     assert peak > debt.iloc[59], "debt should build during the short stretch"
     assert debt.iloc[100] < peak * 0.5, "and decay once sleep recovers"
-    assert (debt >= 0).all()
+
+
+def test_surplus_sleep_repays_debt_and_can_go_negative():
+    """A night above need must repay debt 1:1, with no floor at zero.
+
+    An earlier version floored the nightly term at zero, so sleeping nine hours
+    and sleeping exactly to need repaid identical amounts — the surplus was
+    simply discarded.
+    """
+    n = 200
+    rng = np.random.default_rng(3)
+    sleep = rng.normal(6.0, 0.8, n).clip(4.0, 8.0)
+    lean = score.sleep_debt_and_need(
+        _daily(n=n, total_sleep_h=sleep, nap_sleep_h=0.0, steps=np.nan))
+
+    generous = sleep.copy()
+    generous[150:] += 3.0                           # a long, genuine surplus
+    rich = score.sleep_debt_and_need(
+        _daily(n=n, total_sleep_h=generous, nap_sleep_h=0.0, steps=np.nan))
+
+    assert lean["sleep_debt_h"].iloc[-1] > 0, "setup should build real debt"
+    assert rich["sleep_debt_h"].iloc[-1] < 0, "a sustained surplus banks sleep"
 
 
 def test_debt_decay_rate_matches_tau():
-    """With no shortfall, debt must halve in about tau*ln(2) days."""
-    n = 60
-    d = _daily(n=n, total_sleep_h=12.0, nap_sleep_h=0.0, steps=np.nan)
-    out = score.sleep_debt_and_need(d)
-    assert out["sleep_debt_h"].iloc[-1] == pytest.approx(0.0, abs=1e-6)
+    """With no shortfall, standing debt decays at exactly exp(-1/tau) a night."""
+    n = 160
+    sleep = np.full(n, 7.0)
+    sleep[40:50] = 4.0                              # build some debt to decay
+    d = _daily(n=n, total_sleep_h=sleep, nap_sleep_h=0.0, steps=np.nan)
+    debt = score.sleep_debt_and_need(d)["sleep_debt_h"]
+
+    # Sleep sits exactly on need (the P75 of a mostly-constant series) from
+    # night 50 on, so every later change is pure decay.
+    peak = debt.iloc[49]
+    assert peak > 0
+    assert debt.iloc[59] / peak == pytest.approx(np.exp(-10 / score.DEBT_TAU_DAYS))
+    # Half-life is a shade under ten nights.
+    assert score.DEBT_TAU_DAYS * np.log(2) == pytest.approx(9.7, abs=0.1)
 
 
 def test_naps_pay_down_debt():

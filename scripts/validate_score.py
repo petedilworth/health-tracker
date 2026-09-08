@@ -118,7 +118,9 @@ def main() -> None:
     checks = []
     debt, need = daily["sleep_debt_h"].dropna(), daily["sleep_need_h"].dropna()
     sri, perf = daily["sri"].dropna(), daily["sleep_performance_pct"].dropna()
-    checks.append(("sleep_debt_h >= 0", bool((debt >= 0).all()),
+    # Debt is unfloored by design — a surplus banks sleep — but a negative
+    # median would mean the need baseline is set too low to be a target.
+    checks.append(("sleep_debt_h median > 0", bool(debt.median() > 0),
                    f"min {debt.min():.2f}, median {debt.median():.2f}, max {debt.max():.2f}"))
     checks.append(("sleep_need_h within 6-11h", bool(need.between(6, 11).all()),
                    f"min {need.min():.2f}, median {need.median():.2f}, max {need.max():.2f}"))

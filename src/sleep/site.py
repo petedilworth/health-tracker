@@ -122,9 +122,10 @@ JSON_BUDGET_KB = 300
 
 # Mirrors the cron entries in .github/workflows/daily.yml; a test ties the two
 # together. Shipped as UTC hours rather than prose because the reader is in
-# Eastern and the browser can localise them: a hardcoded "noon Eastern" would be
-# wrong for the four months of the year the fixed UTC hour lands on 11am.
-SCHEDULE_UTC_HOURS = [16, 23]
+# Eastern and the browser can localise them: a hardcoded "9am and 9pm Eastern"
+# would be wrong for the winter months, when the fixed UTC hours land on 8am
+# and 8pm.
+SCHEDULE_UTC_HOURS = [13, 1]
 SCHEDULE_NOTE = ("updates daily at " +
                  " and ".join(f"{h:02d}:00" for h in SCHEDULE_UTC_HOURS) + " UTC")
 

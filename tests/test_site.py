@@ -285,20 +285,28 @@ def test_schedule_hours_travel_in_the_payload():
     fresh = site._freshness(SUMMARY)
     assert fresh["schedule_hours_utc"] == site.SCHEDULE_UTC_HOURS
     # A plain-text fallback stays for the no-JS case.
-    assert "16:00" in fresh["schedule"] and "UTC" in fresh["schedule"]
+    assert "UTC" in fresh["schedule"]
+    for h in site.SCHEDULE_UTC_HOURS:
+        assert f"{h:02d}:00" in fresh["schedule"]
 
 
-def test_main_run_is_midday_eastern():
-    """The point of the schedule: land after the ring has plausibly synced.
+def test_runs_land_morning_and_evening_eastern():
+    """9am and 9pm Eastern, drifting to 8am and 8pm in winter.
 
-    Cron is UTC-only so this drifts an hour across DST, which is accepted; the
-    guard is that it must stay in the middle of the Eastern day either side.
+    Cron is UTC-only so the hour shifts across DST, which is accepted. The guard
+    is that one run stays in the morning and the other in the evening, since a
+    single morning pull can beat the ring's sync — which is what lost a night on
+    2026-09-08.
     """
     import datetime as dt
     from zoneinfo import ZoneInfo
     eastern = ZoneInfo("America/New_York")
-    main = min(site.SCHEDULE_UTC_HOURS)
     for month, label in ((7, "EDT"), (1, "EST")):
-        utc = dt.datetime(2026, month, 15, main, tzinfo=dt.timezone.utc)
-        local = utc.astimezone(eastern).hour
-        assert 11 <= local <= 12, f"{label}: main run lands at {local}:00 Eastern"
+        local = sorted(
+            dt.datetime(2026, month, 15, h, tzinfo=dt.timezone.utc)
+            .astimezone(eastern).hour
+            for h in site.SCHEDULE_UTC_HOURS
+        )
+        assert len(local) == 2, "expected a morning and an evening run"
+        assert local[0] in (8, 9), f"{label}: morning run at {local[0]}:00 Eastern"
+        assert local[1] in (20, 21), f"{label}: evening run at {local[1]}:00 Eastern"

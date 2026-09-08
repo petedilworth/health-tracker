@@ -91,10 +91,14 @@
     if (!hours || !hours.length) return fresh.schedule || "";
     var now = new Date();
     var local = hours.map(function (h) {
-      var d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(),
-                                now.getUTCDate(), h, 0, 0));
-      return d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
-    });
+      return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(),
+                               now.getUTCDate(), h, 0, 0));
+    }).sort(function (a, b) { return a.getHours() - b.getHours(); })
+      .map(function (d) {
+        return d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+      });
+    // Sorted by LOCAL hour: 01:00 UTC is 9pm the previous Eastern day, so
+    // UTC order would read "9:00 PM and 9:00 AM".
     return "updates daily at " + local.join(" and ");
   }
 

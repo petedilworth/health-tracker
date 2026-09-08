@@ -2,20 +2,16 @@ name: Daily Sleep Analytics
 
 on:
   schedule:
-    # Cron is UTC only, so "noon Eastern" cannot be written directly: it is
-    # 16:00 UTC under EDT and 17:00 under EST. A fixed UTC hour is used and the
-    # winter drift accepted, rather than gating the job on the real Eastern
-    # hour — scheduled runs already slip by minutes under load, so this was
-    # never exact to the minute.
+    # Cron is UTC only, so Eastern times drift an hour across DST. Fixed UTC
+    # hours, drift accepted: scheduled runs already slip by minutes under load.
     #
-    # Twice daily because the ring only syncs when the phone app opens, so one
-    # run can land before last night's session exists: on 2026-09-08 the old
-    # 09:00 Eastern pull got Oura's daily score for the night but not the
-    # session behind it, and the site showed the night before as the latest.
-    # The 30-day lookback plus field-wise upsert makes the second pull
-    # idempotent.
-    - cron: "0 16 * * *"   # noon Eastern in summer, 11am in winter
-    - cron: "0 23 * * *"   # backup: 7pm Eastern in summer, 6pm in winter
+    # Twice daily because the ring only syncs when the phone app opens, so the
+    # morning run can land before last night's session exists — that is exactly
+    # what happened on 2026-09-08, when the 9am pull got Oura's daily score but
+    # not the session behind it. The evening run covers it. The 30-day lookback
+    # plus field-wise upsert makes the second pull idempotent.
+    - cron: "0 13 * * *"   # 9am Eastern in summer, 8am in winter
+    - cron: "0 1 * * *"    # 9pm Eastern in summer, 8pm in winter
   workflow_dispatch: {}
 
 permissions:
@@ -52,6 +48,8 @@ jobs:
           if git diff --cached --quiet; then
             echo "No changes to commit."
           else
-            git commit -m "data: daily update ($(date -u +%Y-%m-%d))"
+            # Eastern, not UTC: the 9pm run fires at 01:00 UTC, which is
+            # already tomorrow, so a UTC stamp would misdate the commit.
+            git commit -m "data: daily update ($(TZ=America/New_York date +%Y-%m-%d))"
             git push
           fi

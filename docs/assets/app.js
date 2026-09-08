@@ -83,13 +83,28 @@
       { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
   }
 
+  // The job is scheduled in UTC because cron has no timezone. Render those hours
+  // in the reader's own clock, so it stays right either side of a DST change
+  // without the build knowing anything about timezones.
+  function scheduleText(fresh) {
+    var hours = fresh.schedule_hours_utc;
+    if (!hours || !hours.length) return fresh.schedule || "";
+    var now = new Date();
+    var local = hours.map(function (h) {
+      var d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(),
+                                now.getUTCDate(), h, 0, 0));
+      return d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+    });
+    return "updates daily at " + local.join(" and ");
+  }
+
   function renderFreshness(fresh) {
     if (!fresh) return;
     var now = new Date();
     var line = el("freshline");
     if (line) {
       line.textContent = "Sleep data through " + niceDate(fresh.data_through) +
-        " · checked " + niceTime(fresh.built) + " · " + (fresh.schedule || "");
+        " · checked " + niceTime(fresh.built) + " · " + scheduleText(fresh);
     }
 
     var bar = el("stalebar");

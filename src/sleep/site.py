@@ -120,8 +120,13 @@ CARD_KEYS = ["opportunity_debt_h", "sleep_score", "sleep_performance_pct",
 
 JSON_BUDGET_KB = 300
 
-# Matches the cron entries in .github/workflows/daily.yml.
-SCHEDULE_NOTE = "updates daily at 13:00 and 20:00 UTC"
+# Mirrors the cron entries in .github/workflows/daily.yml; a test ties the two
+# together. Shipped as UTC hours rather than prose because the reader is in
+# Eastern and the browser can localise them: a hardcoded "noon Eastern" would be
+# wrong for the four months of the year the fixed UTC hour lands on 11am.
+SCHEDULE_UTC_HOURS = [16, 23]
+SCHEDULE_NOTE = ("updates daily at " +
+                 " and ".join(f"{h:02d}:00" for h in SCHEDULE_UTC_HOURS) + " UTC")
 
 
 # --- helpers ----------------------------------------------------------------
@@ -214,7 +219,8 @@ def _freshness(summary: dict) -> dict:
         "built": dt.datetime.now(dt.timezone.utc).replace(
             microsecond=0).isoformat(),
         "data_through": summary.get("data_through"),
-        "schedule": SCHEDULE_NOTE,
+        "schedule": SCHEDULE_NOTE,          # fallback if the JS cannot localise
+        "schedule_hours_utc": SCHEDULE_UTC_HOURS,
     }
 
 

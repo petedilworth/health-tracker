@@ -247,7 +247,7 @@ def test_every_payload_carries_freshness(tmp_path, monkeypatch):
     overview = json.loads((tmp_path / "data" / "overview.json").read_text())
     assert overview["fresh"]["data_through"] == SUMMARY["data_through"]
     assert overview["fresh"]["built"].endswith("+00:00"), "must be UTC"
-    assert "13:00" in overview["fresh"]["schedule"]
+    assert overview["fresh"]["schedule_hours_utc"] == site.SCHEDULE_UTC_HOURS
 
     # Every metric page needs it too, so the stale banner works without a
     # second fetch on the 26 detail pages.
@@ -266,15 +266,39 @@ def test_shell_carries_the_stale_bar_and_freshness_line(tmp_path, monkeypatch):
         assert 'id="freshline"' in html, page
 
 
-def test_schedule_note_matches_the_workflow_cron():
+def test_schedule_hours_match_the_workflow_cron():
     """The footer tells you when to expect an update; a stale promise is worse
-    than none, so tie it to the actual cron entries."""
+    than none, so tie it to the actual cron entries in both directions."""
     from pathlib import Path
     import re
     wf = (Path(__file__).resolve().parents[1]
           / ".github" / "workflows" / "daily.yml").read_text()
-    hours = re.findall(r'cron:\s*"0 (\d{1,2}) \* \* \*"', wf)
+    hours = [int(h) for h in re.findall(r'cron:\s*"0 (\d{1,2}) \* \* \*"', wf)]
     assert hours, "no daily cron found in the workflow"
-    for h in hours:
-        assert f"{int(h):02d}:00" in site.SCHEDULE_NOTE, (
-            f"cron runs at {h}:00 UTC but the site does not say so")
+    assert sorted(hours) == sorted(site.SCHEDULE_UTC_HOURS), (
+        f"workflow runs at {hours} UTC but the site advertises "
+        f"{site.SCHEDULE_UTC_HOURS}")
+
+
+def test_schedule_hours_travel_in_the_payload():
+    """The browser localises these, so they must ship as numbers, not prose."""
+    fresh = site._freshness(SUMMARY)
+    assert fresh["schedule_hours_utc"] == site.SCHEDULE_UTC_HOURS
+    # A plain-text fallback stays for the no-JS case.
+    assert "16:00" in fresh["schedule"] and "UTC" in fresh["schedule"]
+
+
+def test_main_run_is_midday_eastern():
+    """The point of the schedule: land after the ring has plausibly synced.
+
+    Cron is UTC-only so this drifts an hour across DST, which is accepted; the
+    guard is that it must stay in the middle of the Eastern day either side.
+    """
+    import datetime as dt
+    from zoneinfo import ZoneInfo
+    eastern = ZoneInfo("America/New_York")
+    main = min(site.SCHEDULE_UTC_HOURS)
+    for month, label in ((7, "EDT"), (1, "EST")):
+        utc = dt.datetime(2026, month, 15, main, tzinfo=dt.timezone.utc)
+        local = utc.astimezone(eastern).hour
+        assert 11 <= local <= 12, f"{label}: main run lands at {local}:00 Eastern"

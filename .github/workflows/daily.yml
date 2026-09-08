@@ -2,13 +2,20 @@ name: Daily Sleep Analytics
 
 on:
   schedule:
-    # Twice daily. The ring only syncs when the phone app opens, so a single
-    # run can land before last night's session exists: on 2026-09-08 the 13:00
-    # pull got Oura's daily score for the night but not the session behind it,
-    # and the site showed the night before as the latest. The 30-day lookback
-    # plus field-wise upsert makes the second pull idempotent.
-    - cron: "0 13 * * *"
-    - cron: "0 20 * * *"
+    # Cron is UTC only, so "noon Eastern" cannot be written directly: it is
+    # 16:00 UTC under EDT and 17:00 under EST. A fixed UTC hour is used and the
+    # winter drift accepted, rather than gating the job on the real Eastern
+    # hour — scheduled runs already slip by minutes under load, so this was
+    # never exact to the minute.
+    #
+    # Twice daily because the ring only syncs when the phone app opens, so one
+    # run can land before last night's session exists: on 2026-09-08 the old
+    # 09:00 Eastern pull got Oura's daily score for the night but not the
+    # session behind it, and the site showed the night before as the latest.
+    # The 30-day lookback plus field-wise upsert makes the second pull
+    # idempotent.
+    - cron: "0 16 * * *"   # noon Eastern in summer, 11am in winter
+    - cron: "0 23 * * *"   # backup: 7pm Eastern in summer, 6pm in winter
   workflow_dispatch: {}
 
 permissions:

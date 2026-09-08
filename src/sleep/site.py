@@ -47,6 +47,8 @@ FORMAT_BY_KEY = {
     "total_sleep_h": "h1", "time_in_bed_h": "h1", "deep_h": "h1", "rem_h": "h1",
     "light_h": "h1", "nap_sleep_h": "h1", "sleep_debt_h": "h1",
     "sleep_need_h": "h1", "sleep_recommended_h": "h1",
+    "opportunity_debt_h": "h1", "opportunity_gap_h": "h1",
+    "opportunity_target_h": "h1", "bedtime_target": "clock",
     "efficiency": "pct0", "sleep_performance_pct": "pct0",
     "latency_min": "f0", "restless_periods": "f0",
     "hr_low": "f0", "hr_avg": "f0", "hrv": "f0", "steps": "int",
@@ -90,6 +92,11 @@ def _tracked_spec(m: Metric) -> PageSpec:
 PAGES: list[PageSpec] = [
     PageSpec("sleep_score", "Sleep score", "score", DERIVED, True, "scatter", "Headline"),
     PageSpec("sleep_performance_pct", "Sleep performance", "%", DERIVED, True, "scatter", "Headline"),
+    PageSpec("opportunity_debt_h", "Sleep opportunity debt", "h", DERIVED, False,
+             "line", "Headline"),
+    PageSpec("opportunity_gap_h", "Sleep opportunity", "h", DERIVED, True,
+             "scatter", "Headline", extra_key="opportunity_target_h",
+             extra_label="Target"),
     PageSpec("sleep_debt_h", "Sleep debt", "h", DERIVED, False, "line", "Headline"),
     PageSpec("sri", "Sleep regularity (SRI)", "score", DERIVED, True, "line", "Headline"),
     PageSpec("readiness", "Readiness", "score", DERIVED, True, "scatter", "Headline"),
@@ -104,8 +111,11 @@ PAGES: list[PageSpec] = [
 PAGE_BY_KEY = {p.key: p for p in PAGES}
 
 # The eight overview cards (Q13: all of them).
-CARD_KEYS = ["sleep_score", "sleep_performance_pct", "sleep_debt_h", "sri",
-             "steps", "readiness", "temp_deviation", "breaths_per_min"]
+# Opportunity leads: it is the half of sleep you actually control, and it is
+# measured from bedtime and waketime rather than inferred.
+CARD_KEYS = ["opportunity_debt_h", "sleep_score", "sleep_performance_pct",
+             "sleep_debt_h", "sri", "steps", "readiness", "temp_deviation",
+             "breaths_per_min"]
 
 JSON_BUDGET_KB = 300
 
@@ -214,6 +224,51 @@ def _comp(label, value, fmt, **extra) -> dict:
     return {"label": label, "value": _round(value), "format": fmt, **extra}
 
 
+def _clock(hour) -> str:
+    """Decimal +24-shifted hour -> '10:15 pm', matching the JS 'clock' format."""
+    if hour is None or pd.isna(hour):
+        return "—"
+    h = float(hour) % 24.0
+    minute = int(round((h % 1) * 60))
+    h = int(h) + (1 if minute == 60 else 0)
+    minute = 0 if minute == 60 else minute
+    suffix = "am" if h % 24 < 12 else "pm"
+    display = h % 12 or 12
+    return f"{display}:{minute:02d} {suffix}"
+
+
+def _nights_to_clear(debt, threshold: float = 1.0) -> int | None:
+    """Nights of pure decay to bring `debt` under `threshold`, or None if under.
+
+    The direct answer to "if I do this, when do I get the reward?". Assumes only
+    that you hit your target from tonight on: no invented catch-up, since a night
+    above target clears it faster than this says.
+    """
+    if debt is None or pd.isna(debt) or debt <= threshold:
+        return None
+    decay = float(np.exp(-1.0 / score.DEBT_TAU_DAYS))
+    return int(np.ceil(np.log(threshold / float(debt)) / np.log(decay)))
+
+
+def _target_streaks(daily: pd.DataFrame) -> tuple[int, int, int]:
+    """(current streak, best streak ever, nights on target in the last year).
+
+    Streaks are the motivating read on opportunity: the level says how far
+    behind you are, the streak says whether you are doing anything about it.
+    """
+    if "opportunity_gap_h" not in daily.columns:
+        return 0, 0, 0
+    met = (daily["opportunity_gap_h"] >= 0).fillna(False)
+    runs = met.groupby((met != met.shift()).cumsum()).sum()
+    best = int(runs.max()) if len(runs) else 0
+    current = 0
+    for hit in reversed(met.tolist()):
+        if not hit:
+            break
+        current += 1
+    return current, best, int(met.tail(365).sum())
+
+
 def _explain(daily: pd.DataFrame, spec: PageSpec) -> dict | None:
     """Explanation text + latest component values for derived metrics."""
     key = spec.key
@@ -267,6 +322,82 @@ def _explain(daily: pd.DataFrame, spec: PageSpec) -> dict | None:
             ],
         }
 
+    if key in ("opportunity_debt_h", "opportunity_gap_h"):
+        target = float(config.TARGET_TIB_H)
+        decay = float(np.exp(-1.0 / score.DEBT_TAU_DAYS))
+        weight = 1.0 / (1.0 - decay)          # nights the accumulator spans
+        debt = last.get("opportunity_debt_h")
+        per_night = (debt / weight * 60.0) if debt is not None and not pd.isna(debt) else None
+        streak, best_streak, last_year = _target_streaks(daily)
+        yield_min = score.opportunity_yield(daily)
+        need = last.get("sleep_need_h")
+        eff = float(daily["efficiency"].median()) / 100.0
+        implied = (need / eff) if need and eff else None
+
+        shared = (
+            f"Opportunity is time in bed: when you switched the light off and "
+            f"when you got up. It is the half of sleep you actually control, and "
+            f"the half the ring measures best, since bedtime and waketime are "
+            f"direct timing rather than inferred sleep. Your target is "
+            f"{target:g}h in bed, lights out {_clock(last.get('bedtime_target'))} "
+            f"tonight. Across your history each extra hour in bed has bought "
+            f"about {yield_min:.0f} minutes of actual sleep, and that rate barely "
+            f"falls at the top of the range — which is the whole reason this "
+            f"metric exists. Worth knowing rather than worrying about: "
+            f"{target:g}h in bed yields roughly {target * eff:.1f}h of sleep at "
+            f"your {eff * 100:.0f}% efficiency, against a sleep need of "
+            f"{need:.2f}h. Clearing this debt entirely still leaves about "
+            f"{(need - target * eff) * 60:.0f} minutes a night of sleep debt. "
+            f"Full need would want {implied:.1f}h in bed; the lower target is "
+            f"deliberate, because you meet it far more often and a target you "
+            f"keep beats a target you admire."
+        )
+
+        if key == "opportunity_gap_h":
+            return {
+                "text": shared + (
+                    " This page is the nightly version: how much more or less "
+                    "time in bed you gave yourself than the target."
+                ),
+                "formula": f"opportunity = time in bed − {target:g}h",
+                "components": [
+                    _comp("Time in bed", last.get("time_in_bed_h"), "h1"),
+                    _comp("Target", target, "h1"),
+                    _comp("Bedtime target tonight", last.get("bedtime_target"), "clock"),
+                    _comp("= Opportunity vs target", last.get(key), "h1", result=True),
+                ],
+            }
+
+        return {
+            "text": shared + (
+                f" The debt accumulates the same way sleep debt does: each night, "
+                f"debt = {decay:.3f} × yesterday's debt + (target − time in bed), "
+                f"symmetric so a long night in bed repays it hour for hour, and "
+                f"unfloored so a real surplus banks. A night with no recording "
+                f"holds it where it is. Standing debt halves in "
+                f"{score.DEBT_HALF_LIFE_DAYS:g} nights, so a good run pays off "
+                f"while you can still feel it. The accumulator spans about "
+                f"{weight:.0f} nights, so divide by that for the readable number: "
+                f"you are currently around {per_night:.0f} minutes short per "
+                f"night, which is one bedtime change rather than a mountain."
+            ),
+            "formula": f"debt = {decay:.3f} × previous + ({target:g}h − time in bed)",
+            "components": [
+                _comp("Time in bed", last.get("time_in_bed_h"), "h1"),
+                _comp("Target", target, "h1"),
+                _comp("Bedtime target tonight", last.get("bedtime_target"), "clock"),
+                _comp("Short per night", per_night, "f0",
+                      note="minutes — the debt spread over the nights it spans"),
+                _comp("Nights on target now", streak, "f0",
+                      note=f"best run ever {best_streak}; "
+                           f"{last_year} nights on target in the last year"),
+                _comp("Nights on target to clear it", _nights_to_clear(debt), "f0",
+                      note="to bring it under an hour, hitting target every "
+                           "night; a night past target clears it faster"),
+                _comp("= Opportunity debt", debt, "h1", result=True),
+            ],
+        }
+
     if key == "sleep_debt_h":
         slept = (last.get("total_sleep_h") or 0) + (last.get("nap_sleep_h") or 0)
         need = last.get("sleep_need_h") or 0
@@ -275,16 +406,38 @@ def _explain(daily: pd.DataFrame, spec: PageSpec) -> dict | None:
             "text": (
                 f"Accumulated shortfall against your sleep need, with old debt "
                 f"fading: each night, debt = {decay:.3f} × yesterday's debt + "
-                f"max(0, need − sleep). That decay means debt halves in about "
-                f"{score.DEBT_TAU_DAYS * np.log(2):.1f} days if you sleep to need. "
-                f"Naps count as sleep. A night with no recording holds debt where "
-                f"it is — an unworn ring is not evidence you caught up."
+                f"(need − sleep). The decay alone halves standing debt in "
+                f"{score.DEBT_HALF_LIFE_DAYS:g} nights. That is tuned to how "
+                f"recovery actually feels — one bad night absorbed, two or three "
+                f"compounding, a few solid nights restoring — rather than to the "
+                f"recovery literature, which finds objective recovery slower than "
+                f"the subjective kind. So treat a cleared number as encouraging "
+                f"rather than as proof, and read the 30-day line on the chart for "
+                f"the long-run picture. The "
+                f"subtraction is symmetric and has no floor: sleeping past your "
+                f"need repays debt hour for hour, and a sustained surplus can "
+                f"carry debt below zero, because banked sleep genuinely buys "
+                f"resilience. Naps count as sleep. A night with no recording "
+                f"holds debt where it is — an unworn ring is not evidence you "
+                f"caught up. One thing to understand before reading the level: "
+                f"the need you grade against sets the zero point and almost "
+                f"nothing else. Moving need by an hour moves every debt reading "
+                f"by about {1 / (1 - decay):.0f} hours, while the shape of the "
+                f"line stays the same — debt computed against your median sleep "
+                f"correlates 0.99 with this. So read the movement, not the "
+                f"level, and act on sleep opportunity, which you control."
             ),
-            "formula": f"debt = {decay:.3f} × previous + max(0, need − slept)",
+            "formula": f"debt = {decay:.3f} × previous + (need − slept)",
             "components": [
                 _comp("Sleep need", need, "h1"),
                 _comp("Slept (night + naps)", slept, "h1"),
-                _comp("Last night's shortfall", max(0.0, need - slept), "h1"),
+                _comp("Shortfall vs need (negative = surplus)", need - slept, "h1"),
+                _comp("Structural floor", (need - float(daily["total_sleep_h"].median()))
+                      / (1 - decay), "h1",
+                      note="where debt sits if you keep sleeping your median"),
+                _comp("Nights at need to clear it", _nights_to_clear(last.get(key)), "f0",
+                      note="to bring it under an hour, sleeping to need every "
+                           "night; sleeping past need clears it faster"),
                 _comp("= Debt now", last.get(key), "h1", result=True),
             ],
         }
@@ -293,27 +446,37 @@ def _explain(daily: pd.DataFrame, spec: PageSpec) -> dict | None:
         need = last.get("sleep_need_h")
         debt = last.get("sleep_debt_h") or 0
         rec = last.get("sleep_recommended_h")
-        debt_up = min(debt * score.DEBT_UPLIFT_PER_HOUR, score.DEBT_UPLIFT_CAP_H)
+        debt_up = min(max(0.0, debt * score.DEBT_UPLIFT_PER_HOUR),
+                      score.DEBT_UPLIFT_CAP_H)
         act_up = max(0.0, (rec or 0) - (need or 0) - debt_up)
         return {
             "text": (
-                f"Your baseline need is the {int(score.NEED_QUANTILE * 100)}th "
-                f"percentile of *all* your recorded sleep, kept between "
-                f"{score.NEED_MIN_H:g} and {score.NEED_MAX_H:g} hours — roughly "
-                f"what you sleep on your better nights, standing in for "
-                f"unrestricted sleep. Deliberately not a rolling window: a "
-                f"trailing window follows recent behaviour, so a bad stretch "
-                f"quietly lowers the bar it is judged against. Debt and "
-                f"performance are measured against this stable number. "
+                f"Your baseline need is the median sleep you get on nights "
+                f"when you gave yourself real opportunity — at least "
+                f"{score.NEED_OPPORTUNITY_TIB_H:g} hours in bed — kept between "
+                f"{score.NEED_MIN_H:g} and {score.NEED_MAX_H:g} hours. It is "
+                f"deliberately not a percentile of all your sleep. Your sleep "
+                f"rises with time in bed and never levels off: each extra hour "
+                f"in bed buys about {score.opportunity_yield(daily):.0f} minutes "
+                f"of sleep, and efficiency barely drops even past ten hours in "
+                f"bed. Someone sleeping at their need shows the opposite, so a "
+                f"percentile of your recorded sleep would be measuring your "
+                f"schedule rather than your requirement. Conditioning on "
+                f"opportunity also stops the bar following you down: in 2026 "
+                f"your median sleep fell to the worst in the record while your "
+                f"sleep on nights with eight hours in bed rose to the best in "
+                f"the record. Debt and performance are measured against this "
+                f"stable number. "
                 f"'Recommended tonight' then adds repayment "
                 f"of {int(score.DEBT_UPLIFT_PER_HOUR * 100)}% of current debt "
                 f"(max {score.DEBT_UPLIFT_CAP_H:g}h) and "
                 f"{int(score.ACTIVITY_UPLIFT_H * 60)} min after a top-quintile "
                 f"step day. Keeping those uplifts out of the baseline avoids a "
                 f"feedback loop where debt inflates the target it's measured "
-                f"against."
+                f"against. The repayment never goes below zero, so a sleep "
+                f"surplus is never a licence to sleep less than baseline."
             ),
-            "formula": "recommended = need + min(0.15 × debt, 1h) + activity",
+            "formula": "recommended = need + clamp(0.15 × debt, 0, 1h) + activity",
             "components": [
                 _comp("Baseline need", need, "h1"),
                 _comp("Debt repayment", debt_up, "h1"),

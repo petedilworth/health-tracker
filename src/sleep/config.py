@@ -26,6 +26,19 @@ DASHBOARD_PATH = IMAGES_DIR / "dashboard.png"
 
 DEFAULT_MAIL_FROM = "onboarding@resend.dev"
 
+# --- your sleep opportunity target ------------------------------------------
+# "Opportunity" is time in bed, the one part of sleep you actually control and
+# the part the ring measures best (bedtime and waketime are the high-confidence
+# tier). Edit these; nothing derives them from your history on purpose.
+#
+# Set 2026-09 from a stated preference: 8h in bed, lights out 22:15, up 06:15.
+# Deliberately below the 8.52h that full sleep need would imply at your 87%
+# efficiency, because a target met on 39% of nights is a game you can win and
+# one met on 19% is not. See the sleep-opportunity page for the gap this leaves.
+TARGET_TIB_H = 8.0
+TARGET_WAKE_WEEKDAY_H = 6.25   # 06:15, as a decimal hour
+TARGET_WAKE_WEEKEND_H = None   # None -> use your own trailing weekend median
+
 
 def _get(name: str, default: str | None = None, required: bool = False) -> str | None:
     value = os.environ.get(name, default)

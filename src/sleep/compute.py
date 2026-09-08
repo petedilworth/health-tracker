@@ -23,6 +23,7 @@ log = logging.getLogger("sleep.compute")
 ROLLUP_COLUMNS = [m.key for m in ALL_METRICS] + [
     "sleep_score", "sleep_debt_h", "sleep_need_h", "sleep_recommended_h",
     "sleep_performance_pct", "readiness", "sri",
+    "opportunity_debt_h", "opportunity_gap_h",
 ]
 
 # Steps had an unusable early era in this dataset; detected, not hardcoded.
@@ -56,6 +57,7 @@ def compute(history: pd.DataFrame | None = None,
 
     daily = seasonal.add_z_scores(daily)
     daily = daily.join(score.sleep_debt_and_need(daily))
+    daily = daily.join(score.sleep_opportunity(daily))
 
     components = score.component_scores(daily)
     daily = daily.join(components)

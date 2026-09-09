@@ -5,7 +5,7 @@ sleep score, sleep debt, sleep regularity and readiness, published as a website
 and a daily email, all automated through GitHub Actions.
 
 > **Build status: Stages 1–3 complete (data layer, metrics engine, website).**
-> Stage 4 (daily email) is in progress.
+> Stage 4 (daily email) is not yet built; the website is the delivery channel.
 >
 > **Live site: https://petedilworth.github.io/health-tracker/**
 
@@ -79,7 +79,7 @@ from the GitHub mobile app).
 
 | Workflow | What it does |
 |---|---|
-| **Daily Sleep Analytics** | Runs at 13:00 UTC. Pulls the last 30 days and updates `data/history.csv`. |
+| **Daily Sleep Analytics** | Runs at 9am and 9pm Eastern. Pulls the last 30 days, updates `data/history.csv` and rebuilds the site. |
 | **Backfill history** | One-off. Pulls your entire history (default from 2019-01-01). Run this once. |
 | **Anomaly report** | Builds a review queue of suspicious nights into [`docs/review/anomalies.md`](docs/review/anomalies.md), with surrounding nights for context. |
 | **Exclude a day** | Removes bad nights from every metric. Accepts several comma-separated dates. Set `action: include` to restore them. |
@@ -108,8 +108,8 @@ Add these under **Settings → Secrets and variables → Actions**:
 | Secret | Value |
 |---|---|
 | `OURA_PAT` | Personal Access Token from [cloud.ouraring.com](https://cloud.ouraring.com/personal-access-tokens) |
-| `MAIL_TO` | Where the daily email goes *(used from Stage 4)* |
-| `RESEND_API_KEY` | API key from [resend.com](https://resend.com/api-keys), sending access *(Stage 4)* |
+| `MAIL_TO` | Where the daily email will go *(email not yet built)* |
+| `RESEND_API_KEY` | API key from [resend.com](https://resend.com/api-keys), sending access *(email not yet built)* |
 | `MAIL_FROM` | *Optional.* Defaults to Resend's sandbox sender. |
 
 Then run **Backfill history** once to seed `data/history.csv`.

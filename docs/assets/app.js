@@ -66,7 +66,7 @@
   // cannot warn you about a build that never happened.
   var DAY_MS = 86400000;
   var STALE_DATA_DAYS = 2;      // the job pulls last night daily; 2 is slack
-  var STALE_BUILD_HOURS = 36;   // two missed runs at 13:00 and 20:00 UTC
+  var STALE_BUILD_HOURS = 36;   // more than two consecutive missed runs
 
   function niceDate(iso) {
     if (!iso) return "—";

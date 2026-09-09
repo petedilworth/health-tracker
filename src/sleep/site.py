@@ -111,7 +111,7 @@ PAGES: list[PageSpec] = [
 
 PAGE_BY_KEY = {p.key: p for p in PAGES}
 
-# The eight overview cards (Q13: all of them).
+# The overview cards, in display order.
 # Opportunity leads: it is the half of sleep you actually control, and it is
 # measured from bedtime and waketime rather than inferred.
 CARD_KEYS = ["opportunity_debt_h", "sleep_score", "sleep_performance_pct",

@@ -14,7 +14,6 @@
   --aqua: #199e70;
   --orange: #d95926;
   --red: #e66767;
-  --good: #0ca30c;
   --radius: 10px;
 }
 
@@ -51,8 +50,8 @@ h2 { font-size: 15px; }
 /* Confidence badges */
 .badge {
   display: inline-block; vertical-align: middle;
-  font-size: 10.5px; font-weight: 600; letter-spacing: .04em;
-  text-transform: uppercase; border-radius: 999px;
+  font-size: 11px; font-weight: 600; letter-spacing: .02em;
+  border-radius: 999px;
   padding: 2px 9px; margin-left: 8px; cursor: help;
 }
 .badge-high     { color: #9fd49f; background: #12280f; }
@@ -104,11 +103,6 @@ h2 { font-size: 15px; }
 .cardlet .lbl { font-size: 12px; color: var(--muted); }
 .cardlet .big { font-size: 26px; font-weight: 700; color: var(--ink);
                 line-height: 1.15; margin: 2px 0; font-variant-numeric: tabular-nums; }
-.cardlet .mini { font-size: 11.5px; color: var(--muted); display: flex;
-                 gap: 10px; flex-wrap: wrap; }
-.cardlet .mini b { color: var(--ink-2); font-weight: 600; }
-.spark { width: 100%; height: 32px; margin-top: 6px; }
-.spark path { fill: none; stroke: var(--blue); stroke-width: 1.5; opacity: .85; }
 
 /* Stats row on metric pages */
 .stats {
@@ -174,6 +168,7 @@ h2 { font-size: 15px; }
 .foot { max-width: 1080px; margin: 0 auto; padding: 10px 16px 30px;
         color: var(--muted); font-size: 12px; }
 .foot a { color: var(--muted); }
+.foot p { margin: 4px 0; max-width: 720px; }
 
 @media (max-width: 640px) {
   .chart { height: 320px; }
@@ -182,15 +177,12 @@ h2 { font-size: 15px; }
   .cardlet .big { font-size: 22px; }
 }
 
-/* ---- feedback round 1 additions ---- */
-
-/* Overview card trio table (replaces sparklines) */
+/* Overview card trio table */
 .trio { width: 100%; border-collapse: collapse; margin-top: 8px;
         font-variant-numeric: tabular-nums; font-size: 12px; }
 .trio td { padding: 3px 0; border-top: 1px solid var(--grid); color: var(--muted); }
 .trio td.num { text-align: right; color: var(--ink); font-weight: 600; padding-right: 10px; }
 .trio td.pctcell { text-align: right; color: var(--aqua); font-weight: 600; white-space: nowrap; }
-.cardlet .spark { display: none; }
 
 /* Range strip */
 .dist .controls .sub { font-size: 12px; }
@@ -220,6 +212,3 @@ h2 { font-size: 15px; }
 .comps tr.result td { color: var(--ink); font-weight: 700; border-top: 2px solid var(--muted); }
 
 /* Badges now carry words, so give them room */
-.badge { letter-spacing: .02em; text-transform: none; font-size: 11px; }
-
-.foot p { margin: 4px 0; max-width: 720px; }

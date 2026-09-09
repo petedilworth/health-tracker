@@ -80,7 +80,7 @@
     var d = new Date(iso);
     if (isNaN(d)) return iso;
     return d.toLocaleString(undefined,
-      { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+      { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
   }
 
   // The job is scheduled in UTC because cron has no timezone. Render those hours
@@ -135,6 +135,14 @@
       if (!r.ok) throw new Error("fetch failed: " + path);
       return r.json();
     });
+  }
+  // A static site fails quietly: a renamed slug or a half-finished deploy just
+  // leaves the page empty. Say so where the data was meant to go.
+  function showLoadError(targetId, err) {
+    var t = el(targetId);
+    if (t) t.innerHTML = "<p class='loaderr'>Could not load this page's data. " +
+      "Try a reload; if it persists, the last build may have failed.</p>";
+    if (window.console) console.error(err);
   }
 
   var BASE_LAYOUT = {
@@ -324,7 +332,8 @@
       '<span>p75 ' + fmt(m.format, d.p75) + '</span>' +
       '<span>max ' + fmt(m.format, d.max) + '</span></div>';
     return '<div class="controls"><h2>Where last night sits</h2>' +
-      '<span class="sub">' + d.n.toLocaleString() + ' nights · shaded box is the middle 50%</span></div>' +
+      '<span class="sub">' + d.n.toLocaleString() + " " + (d.unit || "nights") +
+      ' · shaded box is the middle 50%</span></div>' +
       svg + labels;
   }
 
@@ -353,9 +362,11 @@
       return "<tr" + (c.result ? " class='result'" : "") + "><td>" + c.label + n +
         "</td><td class='num'>" + val + "</td></tr>";
     }).join("");
-    return "<h2>How it's calculated</h2><p>" + ex.text + "</p>" +
+    var paras = Array.isArray(ex.text) ? ex.text : [ex.text];
+    return "<h2>How it's calculated</h2>" +
+      paras.map(function (p) { return "<p>" + p + "</p>"; }).join("") +
       "<p class='formula'>" + ex.formula + "</p>" +
-      "<table class='comps'>" + head + rows + "</table>";
+      "<div class='scroll-x'><table class='comps'>" + head + rows + "</table></div>";
   }
 
   function tbHTML(payload, period) {
@@ -395,12 +406,20 @@
       }
       var exp = el("explain");
       var expMarkup = explainHTML(payload);
-      if (expMarkup) { exp.innerHTML = expMarkup; exp.hidden = false; }
+      if (expMarkup) {
+        exp.innerHTML = expMarkup; exp.hidden = false;
+        // Only if the table genuinely overflows: say so, rather than clipping
+        // a column silently.
+        var sx = exp.querySelector(".scroll-x");
+        if (sx && sx.scrollWidth > sx.clientWidth + 2) {
+          sx.insertAdjacentHTML("afterend", "<p class='sub'>Swipe the table sideways for more columns.</p>");
+        }
+      }
       render(el("chart"), payload, "daily");
       el("tb").innerHTML = tbHTML(payload, "all");
       wireSeg(el("view-toggle"), "view", function (v) { render(el("chart"), payload, v); });
       wireSeg(el("tb-toggle"), "period", function (p) { el("tb").innerHTML = tbHTML(payload, p); });
-    });
+    }).catch(function (err) { showLoadError("stats", err); });
   }
 
   // --- overview -------------------------------------------------------------
@@ -445,10 +464,11 @@
           row("30-day", c.avg30, c.pct30) +
           "</table></a>";
       }).join("");
-      return fetchJSON(P.root + "/data/m/sleep-score.json");
+      // The chart is the metric being optimised, which is also the lead card.
+      return fetchJSON(P.root + "/data/m/opportunity-debt-h.json");
     }).then(function (payload) {
       render(el("chart"), payload, "daily");
-    });
+    }).catch(function (err) { showLoadError("ov-sub", err); });
   }
 
   function initList() {

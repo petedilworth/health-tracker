@@ -230,9 +230,21 @@ def _dist_payload(daily: pd.DataFrame, key: str) -> dict:
     s = daily[key].dropna()
     if s.empty:
         return {}
+    # Debt, need and SRI hold a value on days with no sleep recorded, so their
+    # n counts calendar days; a measured metric's n counts nights. Saying
+    # "2,795 nights" for a series that includes 300 unrecorded days was wrong.
+    # Decided by whether the series covers MOST unslept days, not any: a
+    # clamped duration leaves the odd night with HRV and no sleep, and that
+    # one stray must not relabel a measured metric.
+    carried = False
+    if "total_sleep_h" in daily.columns:
+        unslept = daily.index[daily["total_sleep_h"].isna()]
+        if len(unslept):
+            carried = s.index.isin(unslept).sum() > 0.5 * len(unslept)
     return {"min": _round(s.min()), "p25": _round(s.quantile(.25)),
             "p50": _round(s.median()), "p75": _round(s.quantile(.75)),
-            "max": _round(s.max()), "n": int(len(s))}
+            "max": _round(s.max()), "n": int(len(s)),
+            "unit": "days" if carried else "nights"}
 
 
 def _top_bottom_payload(daily: pd.DataFrame, spec: PageSpec) -> dict:
@@ -240,10 +252,14 @@ def _top_bottom_payload(daily: pd.DataFrame, spec: PageSpec) -> dict:
     periods = {"all": None,
                "year": end - pd.Timedelta(days=365),
                "quarter": end - pd.Timedelta(days=90)}
+    # Bedtime's best is nearest your target, not earliest: see metrics.top_bottom.
+    target = (config.TARGET_WAKE_WEEKDAY_H + 24.0 - config.TARGET_TIB_H
+              if spec.key == "bedtime" else None)
     out = {}
     for name, since in periods.items():
         tb = metrics.top_bottom(daily, spec.key, n=10, since=since,
-                                higher_is_better=spec.higher_is_better)
+                                higher_is_better=spec.higher_is_better,
+                                target=target)
         out[name] = {
             side: [[ts.strftime("%Y-%m-%d"), _round(v)]
                    for ts, v in frame.itertuples(index=False)]
@@ -321,7 +337,7 @@ def _explain(daily: pd.DataFrame, spec: PageSpec) -> dict | None:
                 note="7-day bedtime consistency" if m.key == "timing" else None,
             ))
         return {
-            "text": (
+            "text": [
                 "Each component is scored 0–100 against your own history — a "
                 "percentile of every night you've recorded, or, for heart rate, "
                 "HRV and breathing, against your trailing 90-day seasonal "
@@ -330,12 +346,12 @@ def _explain(daily: pd.DataFrame, spec: PageSpec) -> dict | None:
                 f"{score.DURATION_NEED_SCORE:g}, "
                 f"{int(score.DURATION_FLOOR_RATIO * 100)}% of need or less "
                 f"scores 0, and 100 is reserved for reaching "
-                f"{int(score.DURATION_CEILING_RATIO * 100)}% of it. The score is "
-                "the weighted average: Σ(weight × component) ÷ Σweight, with "
-                "weights set by how reliably the ring can measure each signal "
-                "and how much you care about it. A missing component drops out "
-                "of both sums rather than counting as zero."
-            ),
+                f"{int(score.DURATION_CEILING_RATIO * 100)}% of it.",
+                "The score is the weighted average: Σ(weight × component) ÷ "
+                "Σweight, with weights set by how reliably the ring can measure "
+                "each signal and how much you care about it. A missing component "
+                "drops out of both sums rather than counting as zero.",
+            ],
             "formula": f"score = Σ(weight × component) ÷ {TOTAL_SCORE_WEIGHT:g}",
             "components": comps, "kind": "score",
         }
@@ -368,31 +384,33 @@ def _explain(daily: pd.DataFrame, spec: PageSpec) -> dict | None:
         eff = float(daily["efficiency"].median()) / 100.0
         implied = (need / eff) if need and eff else None
 
-        shared = (
+        shared = [
             f"Opportunity is time in bed: when you switched the light off and "
             f"when you got up. It is the half of sleep you actually control, and "
             f"the half the ring measures best, since bedtime and waketime are "
             f"direct timing rather than inferred sleep. Your target is "
             f"{target:g}h in bed, lights out {_clock(last.get('bedtime_target'))} "
-            f"tonight. Across your history each extra hour in bed has bought "
-            f"about {yield_min:.0f} minutes of actual sleep, and that rate barely "
-            f"falls at the top of the range — which is the whole reason this "
-            f"metric exists. Worth knowing rather than worrying about: "
-            f"{target:g}h in bed yields roughly {target * eff:.1f}h of sleep at "
-            f"your {eff * 100:.0f}% efficiency, against a sleep need of "
-            f"{need:.2f}h. Clearing this debt entirely still leaves about "
+            f"tonight.",
+            f"Across your history each extra hour in bed has bought about "
+            f"{yield_min:.0f} minutes of actual sleep, and that rate barely falls "
+            f"at the top of the range — which is the whole reason this metric "
+            f"exists.",
+            f"Worth knowing rather than worrying about: {target:g}h in bed "
+            f"yields roughly {target * eff:.1f}h of sleep at your "
+            f"{eff * 100:.0f}% efficiency, against a sleep need of {need:.2f}h. "
+            f"Clearing this debt entirely still leaves about "
             f"{(need - target * eff) * 60:.0f} minutes a night of sleep debt. "
             f"Full need would want {implied:.1f}h in bed; the lower target is "
             f"deliberate, because you meet it far more often and a target you "
-            f"keep beats a target you admire."
-        )
+            f"keep beats a target you admire.",
+        ]
 
         if key == "opportunity_gap_h":
             return {
-                "text": shared + (
-                    " This page is the nightly version: how much more or less "
-                    "time in bed you gave yourself than the target."
-                ),
+                "text": shared + [
+                    "This page is the nightly version: how much more or less "
+                    "time in bed you gave yourself than the target.",
+                ],
                 "formula": f"opportunity = time in bed − {target:g}h",
                 "components": [
                     _comp("Time in bed", last.get("time_in_bed_h"), "h1"),
@@ -403,18 +421,19 @@ def _explain(daily: pd.DataFrame, spec: PageSpec) -> dict | None:
             }
 
         return {
-            "text": shared + (
-                f" The debt accumulates the same way sleep debt does: each night, "
+            "text": shared + [
+                f"The debt accumulates the same way sleep debt does: each night, "
                 f"debt = {decay:.3f} × yesterday's debt + (target − time in bed), "
                 f"symmetric so a long night in bed repays it hour for hour, and "
                 f"unfloored so a real surplus banks. A night with no recording "
-                f"holds it where it is. Standing debt halves in "
-                f"{score.DEBT_HALF_LIFE_DAYS:g} nights, so a good run pays off "
-                f"while you can still feel it. The accumulator spans about "
-                f"{weight:.0f} nights, so divide by that for the readable number: "
-                f"you are currently around {per_night:.0f} minutes short per "
-                f"night, which is one bedtime change rather than a mountain."
-            ),
+                f"holds it where it is.",
+                f"Standing debt halves in {score.DEBT_HALF_LIFE_DAYS:g} nights, "
+                f"so a good run pays off while you can still feel it. The "
+                f"accumulator spans about {weight:.0f} nights, so divide by that "
+                f"for the readable number: you are currently around "
+                f"{per_night:.0f} minutes short per night, which is one bedtime "
+                f"change rather than a mountain.",
+            ],
             "formula": f"debt = {decay:.3f} × previous + ({target:g}h − time in bed)",
             "components": [
                 _comp("Time in bed", last.get("time_in_bed_h"), "h1"),
@@ -437,30 +456,31 @@ def _explain(daily: pd.DataFrame, spec: PageSpec) -> dict | None:
         need = last.get("sleep_need_h") or 0
         decay = float(np.exp(-1.0 / score.DEBT_TAU_DAYS))
         return {
-            "text": (
+            "text": [
                 f"Accumulated shortfall against your sleep need, with old debt "
                 f"fading: each night, debt = {decay:.3f} × yesterday's debt + "
                 f"(need − sleep). The decay alone halves standing debt in "
-                f"{score.DEBT_HALF_LIFE_DAYS:g} nights. That is tuned to how "
-                f"recovery actually feels — one bad night absorbed, two or three "
-                f"compounding, a few solid nights restoring — rather than to the "
-                f"recovery literature, which finds objective recovery slower than "
-                f"the subjective kind. So treat a cleared number as encouraging "
-                f"rather than as proof, and read the 30-day line on the chart for "
-                f"the long-run picture. The "
-                f"subtraction is symmetric and has no floor: sleeping past your "
-                f"need repays debt hour for hour, and a sustained surplus can "
-                f"carry debt below zero, because banked sleep genuinely buys "
+                f"{score.DEBT_HALF_LIFE_DAYS:g} nights.",
+                f"That is tuned to how recovery actually feels — one bad night "
+                f"absorbed, two or three compounding, a few solid nights "
+                f"restoring — rather than to the recovery literature, which finds "
+                f"objective recovery slower than the subjective kind. So treat a "
+                f"cleared number as encouraging rather than as proof, and read "
+                f"the 30-day line on the chart for the long-run picture.",
+                f"The subtraction is symmetric and has no floor: sleeping past "
+                f"your need repays debt hour for hour, and a sustained surplus "
+                f"can carry debt below zero, because banked sleep genuinely buys "
                 f"resilience. Naps count as sleep. A night with no recording "
                 f"holds debt where it is — an unworn ring is not evidence you "
-                f"caught up. One thing to understand before reading the level: "
-                f"the need you grade against sets the zero point and almost "
-                f"nothing else. Moving need by an hour moves every debt reading "
-                f"by about {1 / (1 - decay):.0f} hours, while the shape of the "
-                f"line stays the same — debt computed against your median sleep "
-                f"correlates 0.99 with this. So read the movement, not the "
-                f"level, and act on sleep opportunity, which you control."
-            ),
+                f"caught up.",
+                f"One thing to understand before reading the level: the need you "
+                f"grade against sets the zero point and almost nothing else. "
+                f"Moving need by an hour moves every debt reading by about "
+                f"{1 / (1 - decay):.0f} hours, while the shape of the line stays "
+                f"the same — debt computed against your median sleep correlates "
+                f"0.99 with this. So read the movement, not the level, and act on "
+                f"sleep opportunity, which you control.",
+            ],
             "formula": f"debt = {decay:.3f} × previous + (need − slept)",
             "components": [
                 _comp("Sleep need", need, "h1"),
@@ -484,32 +504,32 @@ def _explain(daily: pd.DataFrame, spec: PageSpec) -> dict | None:
                       score.DEBT_UPLIFT_CAP_H)
         act_up = max(0.0, (rec or 0) - (need or 0) - debt_up)
         return {
-            "text": (
+            "text": [
                 f"Your baseline need is the median sleep you get on nights "
                 f"when you gave yourself real opportunity — at least "
                 f"{score.NEED_OPPORTUNITY_TIB_H:g} hours in bed — kept between "
                 f"{score.NEED_MIN_H:g} and {score.NEED_MAX_H:g} hours. It is "
-                f"deliberately not a percentile of all your sleep. Your sleep "
-                f"rises with time in bed and never levels off: each extra hour "
-                f"in bed buys about {score.opportunity_yield(daily):.0f} minutes "
-                f"of sleep, and efficiency barely drops even past ten hours in "
-                f"bed. Someone sleeping at their need shows the opposite, so a "
-                f"percentile of your recorded sleep would be measuring your "
-                f"schedule rather than your requirement. Conditioning on "
-                f"opportunity also stops the bar following you down: in 2026 "
-                f"your median sleep fell to the worst in the record while your "
-                f"sleep on nights with eight hours in bed rose to the best in "
-                f"the record. Debt and performance are measured against this "
-                f"stable number. "
-                f"'Recommended tonight' then adds repayment "
-                f"of {int(score.DEBT_UPLIFT_PER_HOUR * 100)}% of current debt "
+                f"deliberately not a percentile of all your sleep.",
+                f"Your sleep rises with time in bed and never levels off: each "
+                f"extra hour in bed buys about "
+                f"{score.opportunity_yield(daily):.0f} minutes of sleep, and "
+                f"efficiency barely drops even past ten hours in bed. Someone "
+                f"sleeping at their need shows the opposite, so a percentile of "
+                f"your recorded sleep would be measuring your schedule rather "
+                f"than your requirement. Conditioning on opportunity also stops "
+                f"the bar following you down: in 2026 your median sleep fell to "
+                f"the worst in the record while your sleep on nights with eight "
+                f"hours in bed rose to the best in the record. Debt and "
+                f"performance are measured against this stable number.",
+                f"'Recommended tonight' then adds repayment of "
+                f"{int(score.DEBT_UPLIFT_PER_HOUR * 100)}% of current debt "
                 f"(max {score.DEBT_UPLIFT_CAP_H:g}h) and "
                 f"{int(score.ACTIVITY_UPLIFT_H * 60)} min after a top-quintile "
                 f"step day. Keeping those uplifts out of the baseline avoids a "
                 f"feedback loop where debt inflates the target it's measured "
                 f"against. The repayment never goes below zero, so a sleep "
-                f"surplus is never a licence to sleep less than baseline."
-            ),
+                f"surplus is never a licence to sleep less than baseline.",
+            ],
             "formula": "recommended = need + clamp(0.15 × debt, 0, 1h) + activity",
             "components": [
                 _comp("Baseline need", need, "h1"),
@@ -630,7 +650,7 @@ def overview_payload(daily: pd.DataFrame, summary: dict) -> dict:
             "raised": bool(flag_row["flag_raised"]) if flag_row is not None else False,
             "detail": (flag_row.get("flag_detail") or "") if flag_row is not None else "",
         },
-        "nights": summary.get("nights_after_exclusions"),
+        "nights": summary.get("nights_slept"),
         "range": summary.get("date_range"),
     }
 
@@ -726,7 +746,8 @@ def _overview_page() -> str:
   <div id="flag"></div>
   <section class="cards" id="cards"></section>
   <section class="card">
-    <div class="controls"><h2>Sleep score</h2></div>
+    <div class="controls"><h2>Sleep opportunity debt</h2>
+      <a class="sub" href="metrics/opportunity-debt-h.html">how it's calculated →</a></div>
     <div id="chart" class="chart chart-tall"></div>
   </section>
 </main>
@@ -759,6 +780,18 @@ def _all_metrics_page(daily: pd.DataFrame) -> str:
     return _shell("All metrics · Sleep Analytics", body, "..")
 
 
+def _not_found_page() -> str:
+    """GitHub Pages serves this at any depth, so it needs absolute paths."""
+    body = """
+<main class="wrap">
+  <header class="pagehead"><h1>Page not found</h1>
+    <p class="sub">That URL doesn't exist here.</p></header>
+  <p><a href="/health-tracker/index.html">← Back to the overview</a></p>
+</main>
+<script>window.PAGE = {type: "none"};</script>"""
+    return _shell("Not found · Sleep Analytics", body, "/health-tracker")
+
+
 # --- build -------------------------------------------------------------------
 
 def build_site(daily: pd.DataFrame, summary: dict) -> None:
@@ -789,4 +822,5 @@ def build_site(daily: pd.DataFrame, summary: dict) -> None:
                                                  encoding="utf-8")
     (docs / "robots.txt").write_text("User-agent: *\nDisallow: /\n",
                                      encoding="utf-8")
+    (docs / "404.html").write_text(_not_found_page(), encoding="utf-8")
     log.info("Site built -> %s (%d metric pages)", docs, len(PAGES))

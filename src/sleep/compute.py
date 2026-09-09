@@ -117,6 +117,10 @@ def _summarise(daily: pd.DataFrame, n_raw: int, n_kept: int,
     summary = {
         "nights_recorded": n_raw,
         "nights_after_exclusions": n_kept,
+        # Rows with a sleep session, after exclusions. The one count the site
+        # should quote as "nights": nights_after_exclusions also includes
+        # partial rows with no sleep, and the daily frame includes every gap.
+        "nights_slept": int(len(slept)),
         "nights_scored": int(len(scored)),
         "data_through": data_through,
         "latest_partial": _partial_night(daily),

@@ -14,12 +14,22 @@
   <a href="/health-tracker/index.html">Overview</a>
   <a href="/health-tracker/metrics/index.html">All metrics</a>
 </nav>
+<div class="stalebar" id="stalebar" hidden></div>
+
 <main class="wrap">
-  <header class="pagehead">
-    <h1>Page not found</h1>
-    <p class="sub">That URL doesn't exist here.</p>
-  </header>
+  <header class="pagehead"><h1>Page not found</h1>
+    <p class="sub">That URL doesn't exist here.</p></header>
   <p><a href="/health-tracker/index.html">← Back to the overview</a></p>
 </main>
+<script>window.PAGE = {type: "none"};</script>
+<footer class="foot">
+  <p class="fresh" id="freshline"></p>
+  <p>Percentiles rank a night against every night ever recorded. Higher is always better — so an early bedtime or a low resting heart rate ranks high.</p>
+  <p>Confidence badges describe how well the ring can measure a signal, not how good the value is.</p>
+  <p><a href="/health-tracker/review/anomalies.md">Anomaly review</a> ·
+  <a href="https://github.com/petedilworth/health-tracker">Repo</a></p>
+</footer>
+<script src="/health-tracker/assets/plotly.min.js"></script>
+<script src="/health-tracker/assets/app.js"></script>
 </body>
 </html>

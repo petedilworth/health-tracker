@@ -538,3 +538,15 @@ def test_flag_silent_on_normal_nights():
     out = flags.health_flags(d)
     assert not out["flag_raised"].any()
     assert (out["flag_detail"] == "").all()
+
+
+def test_top_bottom_with_a_target_ranks_best_by_closeness():
+    """Bedtime: earliest-is-best crowned three 7pm nights. Best must be nearest
+    the target; worst stays the monotonic extreme."""
+    d = _daily(n=6, x=[18.5, 21.0, 22.0, 22.5, 23.0, 28.0])
+    out = metrics.top_bottom(d, "x", n=3, higher_is_better=False, target=22.25)
+    assert sorted(out["top"]["value"]) == [22.0, 22.5, 23.0]
+    assert list(out["bottom"]["value"]) == [28.0, 23.0, 22.5]
+    # Without a target the old behaviour is unchanged.
+    plain = metrics.top_bottom(d, "x", n=3, higher_is_better=False)
+    assert list(plain["top"]["value"]) == [18.5, 21.0, 22.0]

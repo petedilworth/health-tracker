@@ -310,3 +310,41 @@ def test_runs_land_morning_and_evening_eastern():
         assert len(local) == 2, "expected a morning and an evening run"
         assert local[0] in (8, 9), f"{label}: morning run at {local[0]}:00 Eastern"
         assert local[1] in (20, 21), f"{label}: evening run at {local[1]}:00 Eastern"
+
+
+# --- review round: one nights count, honest strip units, bedtime target -------
+
+def test_header_nights_count_is_nights_actually_slept():
+    """Three different 'nights' figures were on the site at once. The header
+    must count rows with a sleep session, not rows with any data at all."""
+    daily, summary = _with_partial_tail()          # newest row has no session
+    assert summary["nights_slept"] == int(daily["total_sleep_h"].notna().sum())
+    assert summary["nights_slept"] < summary["nights_after_exclusions"]
+    ov = site.overview_payload(daily, summary)
+    assert ov["nights"] == summary["nights_slept"]
+
+
+def test_dist_unit_is_days_only_for_carried_forward_series():
+    daily, _ = _with_partial_tail()
+    # Debt holds a value on the unrecorded night; HRV does not.
+    assert site._dist_payload(daily, "sleep_debt_h")["unit"] == "days"
+    assert site._dist_payload(daily, "hrv")["unit"] == "nights"
+
+
+def test_bedtime_best_nights_are_nearest_the_target_not_earliest():
+    payload = site.metric_payload(DAILY, _spec("bedtime"))
+    best = [v for _, v in payload["top_bottom"]["all"]["top"]]
+    target = site.config.TARGET_WAKE_WEEKDAY_H + 24.0 - site.config.TARGET_TIB_H
+    assert all(abs(v - target) <= 1.0 for v in best), best
+    # Worst is still the monotonic extreme: latest nights.
+    worst = [v for _, v in payload["top_bottom"]["all"]["bottom"]]
+    assert min(worst) >= DAILY["bedtime"].quantile(0.9)
+
+
+def test_explanations_are_paragraph_lists_that_survive_the_payload():
+    for key in ("sleep_debt_h", "opportunity_debt_h", "sleep_need_h", "sleep_score"):
+        text = site.metric_payload(DAILY, _spec(key))["explain"]["text"]
+        assert isinstance(text, list) and len(text) >= 2, key
+        assert all(isinstance(p, str) and p.strip() for p in text), key
+        # No paragraph should be a wall on its own.
+        assert max(len(p.split()) for p in text) <= 120, key

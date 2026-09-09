@@ -94,6 +94,10 @@ h2 { font-size: 15px; }
   grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
   margin-bottom: 16px;
 }
+/* Nine cards: auto-fill gives 4+4+1 with an orphan at desktop width. */
+@media (min-width: 900px) {
+  .cards { grid-template-columns: repeat(3, 1fr); }
+}
 .cardlet {
   display: block; background: var(--surface);
   border: 1px solid var(--grid); border-radius: var(--radius);
@@ -154,8 +158,10 @@ h2 { font-size: 15px; }
 .tb .worst td:last-child { color: var(--red); }
 
 /* All-metrics list */
+/* Two columns at desktop width: three left no room for a long label, a
+   worded badge and a value on one line, so labels wrapped instead. */
 .mlist { display: grid; gap: 8px; margin: 10px 0 22px;
-         grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
+         grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); }
 .mrow {
   display: flex; align-items: center; gap: 8px;
   background: var(--surface); border: 1px solid var(--grid);
@@ -164,6 +170,9 @@ h2 { font-size: 15px; }
 .mrow:hover { border-color: var(--muted); text-decoration: none; }
 .mrow .mval { margin-left: auto; color: var(--ink); font-weight: 650;
               font-variant-numeric: tabular-nums; }
+/* Let the label give way, never the badge or the value. */
+.mrow > span:first-child { min-width: 0; }
+.mrow .badge, .mrow .mval { white-space: nowrap; flex-shrink: 0; }
 
 .foot { max-width: 1080px; margin: 0 auto; padding: 10px 16px 30px;
         color: var(--muted); font-size: 12px; }
@@ -181,6 +190,7 @@ h2 { font-size: 15px; }
 .trio { width: 100%; border-collapse: collapse; margin-top: 8px;
         font-variant-numeric: tabular-nums; font-size: 12px; }
 .trio td { padding: 3px 0; border-top: 1px solid var(--grid); color: var(--muted); }
+.trio td:first-child { white-space: nowrap; }
 .trio td.num { text-align: right; color: var(--ink); font-weight: 600; padding-right: 10px; }
 .trio td.pctcell { text-align: right; color: var(--aqua); font-weight: 600; white-space: nowrap; }
 
@@ -201,6 +211,8 @@ h2 { font-size: 15px; }
                     font-size: 12.5px; color: var(--ink); background: var(--surface-2);
                     border: 1px solid var(--grid); border-radius: 6px;
                     padding: 8px 10px; display: inline-block; }
+.scroll-x { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.loaderr { color: var(--red); font-size: 13.5px; }
 .comps { width: 100%; border-collapse: collapse; margin-top: 10px;
          font-variant-numeric: tabular-nums; font-size: 13px; }
 .comps th { text-align: left; font-size: 11px; color: var(--muted);
@@ -212,3 +224,21 @@ h2 { font-size: 15px; }
 .comps tr.result td { color: var(--ink); font-weight: 700; border-top: 2px solid var(--muted); }
 
 /* Badges now carry words, so give them room */
+
+/* Phone overrides for the components table. In their own block at the END of
+   the file on purpose: these share specificity with the base .comps rules
+   above, and an earlier media block loses to them silently. */
+@media (max-width: 640px) {
+  /* Five columns must fit a phone rather than clip: the clipped column is
+     the one that says 'confidence', without which a bare 'high' beside a
+     bedtime reads as a rating of the value. */
+  .comps { font-size: 12px; }
+  .comps th, .comps td { padding: 5px 2px; }
+  /* 'MEASUREMENT' at 11px uppercase with .05em tracking is 113px on its own
+     and was the last 8px of overflow. */
+  .comps th { font-size: 10px; letter-spacing: .02em; }
+  .comps .badge { margin-left: 0; font-size: 10px; padding: 1px 6px; }
+  /* Drop the weight column on phones: it is a constant per component and
+     each component's page states it. Confidence stays; it carries meaning. */
+  .comps th:nth-child(4), .comps td:nth-child(4) { display: none; }
+}

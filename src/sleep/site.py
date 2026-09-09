@@ -120,13 +120,16 @@ CARD_KEYS = ["opportunity_debt_h", "sleep_score", "sleep_performance_pct",
 
 JSON_BUDGET_KB = 300
 
-# Mirrors the cron entries in .github/workflows/daily.yml; a test ties the two
-# together. Shipped as UTC hours rather than prose because the reader is in
-# Eastern and the browser can localise them: a hardcoded "9am and 9pm Eastern"
-# would be wrong for the winter months, when the fixed UTC hours land on 8am
-# and 8pm.
-SCHEDULE_UTC_HOURS = [13, 1]
-SCHEDULE_NOTE = ("updates daily at " +
+# Mirrors the cron hour in .github/workflows/daily.yml; a test ties the two
+# together. Shipped as a UTC hour rather than prose because the reader is in
+# Eastern and the browser can localise it: a hardcoded "10am Eastern" would be
+# wrong for the winter months, when the fixed UTC hour lands on 9am.
+#
+# The cron's :23 minute is deliberately not surfaced. Naming a precise minute
+# implies an accuracy the queue does not have — runs have landed anywhere from
+# 2.7 to 9.8 hours after the trigger — so the site says "around" instead.
+SCHEDULE_UTC_HOURS = [14]
+SCHEDULE_NOTE = ("scheduled daily around " +
                  " and ".join(f"{h:02d}:00" for h in SCHEDULE_UTC_HOURS) + " UTC")
 
 

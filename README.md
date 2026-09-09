@@ -79,7 +79,7 @@ from the GitHub mobile app).
 
 | Workflow | What it does |
 |---|---|
-| **Daily Sleep Analytics** | Runs at 9am and 9pm Eastern. Pulls the last 30 days, updates `data/history.csv` and rebuilds the site. |
+| **Daily Sleep Analytics** | Scheduled for 10am Eastern. Pulls the last 30 days, updates `data/history.csv` and rebuilds the site. GitHub queues scheduled jobs, so it commonly lands early afternoon — run it from the Actions tab if you want it sooner, or if the ring hadn't synced. |
 | **Backfill history** | One-off. Pulls your entire history (default from 2019-01-01). Run this once. |
 | **Anomaly report** | Builds a review queue of suspicious nights into [`docs/review/anomalies.md`](docs/review/anomalies.md), with surrounding nights for context. |
 | **Exclude a day** | Removes bad nights from every metric. Accepts several comma-separated dates. Set `action: include` to restore them. |

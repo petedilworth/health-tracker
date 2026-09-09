@@ -66,7 +66,10 @@
   // cannot warn you about a build that never happened.
   var DAY_MS = 86400000;
   var STALE_DATA_DAYS = 2;      // the job pulls last night daily; 2 is slack
-  var STALE_BUILD_HOURS = 36;   // more than two consecutive missed runs
+  // One run a day, and GitHub's queue adds 2.7-9.8h of jitter, so a perfectly
+  // healthy gap reaches ~31h. At 40h a single genuinely missed run still trips
+  // this, because that gap is 48h or more.
+  var STALE_BUILD_HOURS = 40;
 
   function niceDate(iso) {
     if (!iso) return "—";
@@ -99,7 +102,7 @@
       });
     // Sorted by LOCAL hour: 01:00 UTC is 9pm the previous Eastern day, so
     // UTC order would read "9:00 PM and 9:00 AM".
-    return "updates daily at " + local.join(" and ");
+    return "scheduled daily around " + local.join(" and ");
   }
 
   function renderFreshness(fresh) {

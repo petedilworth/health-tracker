@@ -268,13 +268,19 @@ def test_shell_carries_the_stale_bar_and_freshness_line(tmp_path, monkeypatch):
 
 def test_schedule_hours_match_the_workflow_cron():
     """The footer tells you when to expect an update; a stale promise is worse
-    than none, so tie it to the actual cron entries in both directions."""
+    than none, so tie it to the actual cron entries in both directions.
+
+    Matches any minute: the cron deliberately sits at :23 rather than :00 to
+    dodge the busiest slot in GitHub's scheduling queue, and only the hour is
+    ever shown.
+    """
     from pathlib import Path
     import re
     wf = (Path(__file__).resolve().parents[1]
           / ".github" / "workflows" / "daily.yml").read_text()
-    hours = [int(h) for h in re.findall(r'cron:\s*"0 (\d{1,2}) \* \* \*"', wf)]
-    assert hours, "no daily cron found in the workflow"
+    crons = re.findall(r'cron:\s*"(\d{1,2}) (\d{1,2}) \* \* \*"', wf)
+    assert crons, "no daily cron found in the workflow"
+    hours = [int(h) for _, h in crons]
     assert sorted(hours) == sorted(site.SCHEDULE_UTC_HOURS), (
         f"workflow runs at {hours} UTC but the site advertises "
         f"{site.SCHEDULE_UTC_HOURS}")
@@ -290,26 +296,22 @@ def test_schedule_hours_travel_in_the_payload():
         assert f"{h:02d}:00" in fresh["schedule"]
 
 
-def test_runs_land_morning_and_evening_eastern():
-    """9am and 9pm Eastern, drifting to 8am and 8pm in winter.
+def test_single_run_lands_mid_morning_eastern():
+    """One run a day at 10am Eastern, drifting to 9am in winter.
 
-    Cron is UTC-only so the hour shifts across DST, which is accepted. The guard
-    is that one run stays in the morning and the other in the evening, since a
-    single morning pull can beat the ring's sync — which is what lost a night on
-    2026-09-08.
+    Cron is UTC-only so the hour shifts across DST, which is accepted. Manual
+    dispatch covers the mornings the ring has not synced, so there is no second
+    run to guard.
     """
     import datetime as dt
     from zoneinfo import ZoneInfo
     eastern = ZoneInfo("America/New_York")
+    assert len(site.SCHEDULE_UTC_HOURS) == 1, "one scheduled run a day"
     for month, label in ((7, "EDT"), (1, "EST")):
-        local = sorted(
-            dt.datetime(2026, month, 15, h, tzinfo=dt.timezone.utc)
-            .astimezone(eastern).hour
-            for h in site.SCHEDULE_UTC_HOURS
-        )
-        assert len(local) == 2, "expected a morning and an evening run"
-        assert local[0] in (8, 9), f"{label}: morning run at {local[0]}:00 Eastern"
-        assert local[1] in (20, 21), f"{label}: evening run at {local[1]}:00 Eastern"
+        local = (dt.datetime(2026, month, 15, site.SCHEDULE_UTC_HOURS[0],
+                             tzinfo=dt.timezone.utc)
+                 .astimezone(eastern).hour)
+        assert local in (9, 10), f"{label}: run lands at {local}:00 Eastern"
 
 
 # --- review round: one nights count, honest strip units, bedtime target -------

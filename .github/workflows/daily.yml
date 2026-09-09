@@ -2,16 +2,20 @@ name: Daily Sleep Analytics
 
 on:
   schedule:
-    # Cron is UTC only, so Eastern times drift an hour across DST. Fixed UTC
-    # hours, drift accepted: scheduled runs already slip by minutes under load.
+    # 14:00 UTC is 10am Eastern in summer, 9am in winter. Cron has no timezone,
+    # and the winter drift is accepted.
     #
-    # Twice daily because the ring only syncs when the phone app opens, so the
-    # morning run can land before last night's session exists — that is exactly
-    # what happened on 2026-09-08, when the 9am pull got Oura's daily score but
-    # not the session behind it. The evening run covers it. The 30-day lookback
-    # plus field-wise upsert makes the second pull idempotent.
-    - cron: "0 13 * * *"   # 9am Eastern in summer, 8am in winter
-    - cron: "0 1 * * *"    # 9pm Eastern in summer, 8pm in winter
+    # Minute 23, not 00, on evidence. All 13 scheduled runs between 2026-08-27
+    # and 09-08 fired against a :00 cron and every one was late: 2.7h at best,
+    # 3.9h median, 9.8h at worst, none within an hour. GitHub queues scheduled
+    # workflows at low priority and the on-the-hour slot is the most contested,
+    # so an odd minute is the one lever aimed at the queue itself rather than
+    # at working around it. It may not be enough — watch the run times.
+    #
+    # One run a day. If the ring has not synced by then, dispatch it by hand
+    # from the Actions tab: the 30-day lookback plus field-wise upsert makes a
+    # re-pull safe at any hour.
+    - cron: "23 14 * * *"
   workflow_dispatch: {}
 
 permissions:

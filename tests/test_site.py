@@ -184,3 +184,169 @@ def test_build_site_writes_expected_files(tmp_path, monkeypatch):
     index = (tmp_path / "index.html").read_text()
     assert 'name="robots" content="noindex"' in index
     assert "assets/plotly.min.js" in index
+
+
+# --- data freshness -----------------------------------------------------------
+
+def _with_partial_tail():
+    """A history whose newest row has Oura's daily score but no sleep session.
+
+    This is the real 2026-09-08 case: Oura scores a night before the detailed
+    session syncs, so the newest ROW is a day later than the newest NIGHT.
+    """
+    daily, _ = _computed(n=200)
+    history = daily.reset_index()[[
+        "day", "bedtime", "waketime", "total_sleep_h", "time_in_bed_h",
+        "efficiency", "hr_low", "hrv", "breaths_per_min", "nap_sleep_h",
+        "steps", "temp_deviation", "oura_sleep_score", "restfulness",
+    ]].copy()
+    tail = {c: np.nan for c in history.columns}
+    tail.update({"day": history["day"].max() + pd.Timedelta(days=1),
+                 "oura_sleep_score": 86.0, "restfulness": 98.0,
+                 "temp_deviation": 0.13, "nap_sleep_h": 0.0})
+    history = pd.concat([history, pd.DataFrame([tail])], ignore_index=True)
+    return compute.compute(history, pd.DataFrame(columns=["day", "reason", "added_at"]))
+
+
+def test_summary_reports_the_last_night_not_the_last_row():
+    daily, summary = _with_partial_tail()
+    last_night = daily[daily["total_sleep_h"].notna()].index.max().date()
+    assert summary["data_through"] == str(last_night)
+    # The header used to end at the newest row, contradicting "latest night".
+    assert summary["date_range"].endswith(str(last_night))
+    assert str(daily.index.max().date()) != summary["data_through"]
+
+
+def test_partial_night_is_detected_and_described():
+    _, summary = _with_partial_tail()
+    partial = summary["latest_partial"]
+    assert partial is not None
+    assert partial["oura_score"] == 86.0
+    assert "total_sleep_h" in partial["missing"] and "hrv" in partial["missing"]
+
+
+def test_no_partial_night_when_the_newest_row_is_complete():
+    assert SUMMARY["latest_partial"] is None
+    assert SUMMARY["data_through"] == str(DAILY.index.max().date())
+
+
+def test_stats_flag_values_carried_onto_an_unrecorded_night():
+    daily, _ = _with_partial_tail()
+    # Debt carries forward across a night with no recording; the score does not.
+    carried = site._stats_payload(daily, _spec("sleep_debt_h"))
+    measured = site._stats_payload(daily, _spec("sleep_score"))
+    assert carried["carried"] is True
+    assert measured["carried"] is False
+    assert carried["day"] > measured["day"], "that day gap is what needs labelling"
+
+
+def test_every_payload_carries_freshness(tmp_path, monkeypatch):
+    monkeypatch.setattr(site.config, "DOCS_DIR", tmp_path)
+    site.build_site(DAILY, SUMMARY)
+
+    overview = json.loads((tmp_path / "data" / "overview.json").read_text())
+    assert overview["fresh"]["data_through"] == SUMMARY["data_through"]
+    assert overview["fresh"]["built"].endswith("+00:00"), "must be UTC"
+    assert overview["fresh"]["schedule_hours_utc"] == site.SCHEDULE_UTC_HOURS
+
+    # Every metric page needs it too, so the stale banner works without a
+    # second fetch on the 26 detail pages.
+    for spec in site.PAGES:
+        payload = json.loads(
+            (tmp_path / "data" / "m" / f"{spec.slug}.json").read_text())
+        assert payload["fresh"]["data_through"] == SUMMARY["data_through"], spec.slug
+
+
+def test_shell_carries_the_stale_bar_and_freshness_line(tmp_path, monkeypatch):
+    monkeypatch.setattr(site.config, "DOCS_DIR", tmp_path)
+    site.build_site(DAILY, SUMMARY)
+    for page in ("index.html", "metrics/sleep-debt-h.html"):
+        html = (tmp_path / page).read_text()
+        assert 'id="stalebar"' in html, page
+        assert 'id="freshline"' in html, page
+
+
+def test_schedule_hours_match_the_workflow_cron():
+    """The footer tells you when to expect an update; a stale promise is worse
+    than none, so tie it to the actual cron entries in both directions.
+
+    Matches any minute: the cron deliberately sits at :23 rather than :00 to
+    dodge the busiest slot in GitHub's scheduling queue, and only the hour is
+    ever shown.
+    """
+    from pathlib import Path
+    import re
+    wf = (Path(__file__).resolve().parents[1]
+          / ".github" / "workflows" / "daily.yml").read_text()
+    crons = re.findall(r'cron:\s*"(\d{1,2}) (\d{1,2}) \* \* \*"', wf)
+    assert crons, "no daily cron found in the workflow"
+    hours = [int(h) for _, h in crons]
+    assert sorted(hours) == sorted(site.SCHEDULE_UTC_HOURS), (
+        f"workflow runs at {hours} UTC but the site advertises "
+        f"{site.SCHEDULE_UTC_HOURS}")
+
+
+def test_schedule_hours_travel_in_the_payload():
+    """The browser localises these, so they must ship as numbers, not prose."""
+    fresh = site._freshness(SUMMARY)
+    assert fresh["schedule_hours_utc"] == site.SCHEDULE_UTC_HOURS
+    # A plain-text fallback stays for the no-JS case.
+    assert "UTC" in fresh["schedule"]
+    for h in site.SCHEDULE_UTC_HOURS:
+        assert f"{h:02d}:00" in fresh["schedule"]
+
+
+def test_single_run_lands_mid_morning_eastern():
+    """One run a day at 10am Eastern, drifting to 9am in winter.
+
+    Cron is UTC-only so the hour shifts across DST, which is accepted. Manual
+    dispatch covers the mornings the ring has not synced, so there is no second
+    run to guard.
+    """
+    import datetime as dt
+    from zoneinfo import ZoneInfo
+    eastern = ZoneInfo("America/New_York")
+    assert len(site.SCHEDULE_UTC_HOURS) == 1, "one scheduled run a day"
+    for month, label in ((7, "EDT"), (1, "EST")):
+        local = (dt.datetime(2026, month, 15, site.SCHEDULE_UTC_HOURS[0],
+                             tzinfo=dt.timezone.utc)
+                 .astimezone(eastern).hour)
+        assert local in (9, 10), f"{label}: run lands at {local}:00 Eastern"
+
+
+# --- review round: one nights count, honest strip units, bedtime target -------
+
+def test_header_nights_count_is_nights_actually_slept():
+    """Three different 'nights' figures were on the site at once. The header
+    must count rows with a sleep session, not rows with any data at all."""
+    daily, summary = _with_partial_tail()          # newest row has no session
+    assert summary["nights_slept"] == int(daily["total_sleep_h"].notna().sum())
+    assert summary["nights_slept"] < summary["nights_after_exclusions"]
+    ov = site.overview_payload(daily, summary)
+    assert ov["nights"] == summary["nights_slept"]
+
+
+def test_dist_unit_is_days_only_for_carried_forward_series():
+    daily, _ = _with_partial_tail()
+    # Debt holds a value on the unrecorded night; HRV does not.
+    assert site._dist_payload(daily, "sleep_debt_h")["unit"] == "days"
+    assert site._dist_payload(daily, "hrv")["unit"] == "nights"
+
+
+def test_bedtime_best_nights_are_nearest_the_target_not_earliest():
+    payload = site.metric_payload(DAILY, _spec("bedtime"))
+    best = [v for _, v in payload["top_bottom"]["all"]["top"]]
+    target = site.config.TARGET_WAKE_WEEKDAY_H + 24.0 - site.config.TARGET_TIB_H
+    assert all(abs(v - target) <= 1.0 for v in best), best
+    # Worst is still the monotonic extreme: latest nights.
+    worst = [v for _, v in payload["top_bottom"]["all"]["bottom"]]
+    assert min(worst) >= DAILY["bedtime"].quantile(0.9)
+
+
+def test_explanations_are_paragraph_lists_that_survive_the_payload():
+    for key in ("sleep_debt_h", "opportunity_debt_h", "sleep_need_h", "sleep_score"):
+        text = site.metric_payload(DAILY, _spec(key))["explain"]["text"]
+        assert isinstance(text, list) and len(text) >= 2, key
+        assert all(isinstance(p, str) and p.strip() for p in text), key
+        # No paragraph should be a wall on its own.
+        assert max(len(p.split()) for p in text) <= 120, key

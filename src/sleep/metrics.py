@@ -86,8 +86,16 @@ def aggregate(daily: pd.DataFrame, column: str, period: str) -> pd.DataFrame:
 
 def top_bottom(daily: pd.DataFrame, column: str, n: int = 10,
                since: pd.Timestamp | None = None,
-               higher_is_better: bool = True) -> dict[str, pd.DataFrame]:
-    """Best and worst n nights for a metric, optionally within a period."""
+               higher_is_better: bool = True,
+               target: float | None = None) -> dict[str, pd.DataFrame]:
+    """Best and worst n nights for a metric, optionally within a period.
+
+    `target` is for metrics where "best" is not an extreme. Bedtime is the case
+    that forced it: earlier-is-better made the three earliest nights ever, all
+    before 7:30pm and almost certainly illness, the top of the list. With a
+    target, best is the n nights nearest it; worst stays the monotonic extreme,
+    since a 4am bedtime is unambiguously worse than a 7pm one.
+    """
     if column not in daily.columns:
         return {"top": pd.DataFrame(), "bottom": pd.DataFrame()}
     s = daily[column].dropna()
@@ -99,4 +107,8 @@ def top_bottom(daily: pd.DataFrame, column: str, n: int = 10,
     high = s.nlargest(n).rename("value").reset_index()
     low = s.nsmallest(n).rename("value").reset_index()
     # "Top" means best, which for e.g. resting HR is the lowest value.
-    return {"top": high, "bottom": low} if higher_is_better else {"top": low, "bottom": high}
+    out = {"top": high, "bottom": low} if higher_is_better else {"top": low, "bottom": high}
+    if target is not None:
+        nearest = (s - target).abs().nsmallest(n).index
+        out["top"] = s.loc[nearest].rename("value").reset_index()
+    return out

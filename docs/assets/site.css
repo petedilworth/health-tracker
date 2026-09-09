@@ -14,7 +14,6 @@
   --aqua: #199e70;
   --orange: #d95926;
   --red: #e66767;
-  --good: #0ca30c;
   --radius: 10px;
 }
 
@@ -51,8 +50,8 @@ h2 { font-size: 15px; }
 /* Confidence badges */
 .badge {
   display: inline-block; vertical-align: middle;
-  font-size: 10.5px; font-weight: 600; letter-spacing: .04em;
-  text-transform: uppercase; border-radius: 999px;
+  font-size: 11px; font-weight: 600; letter-spacing: .02em;
+  border-radius: 999px;
   padding: 2px 9px; margin-left: 8px; cursor: help;
 }
 .badge-high     { color: #9fd49f; background: #12280f; }
@@ -69,11 +68,35 @@ h2 { font-size: 15px; }
 .flagbox b { color: var(--red); }
 .allclear { color: var(--muted); font-size: 12.5px; margin: 0 0 16px; }
 
+/* Stale-data bar. Full-bleed above the page so it cannot be scrolled past on
+   a phone, and orange rather than red: out of date is a warning, not an alarm. */
+.stalebar {
+  border-bottom: 1px solid var(--orange);
+  background: #2a1a0d; color: #f0c9a0;
+  padding: 10px 16px; font-size: 13.5px; text-align: center;
+}
+.stalebar b { color: var(--orange); }
+.partialbox {
+  border: 1px solid var(--grid); border-radius: var(--radius);
+  background: var(--surface); color: var(--ink-2);
+  padding: 12px 16px; margin: 0 0 16px; font-size: 13px;
+}
+.fresh { color: var(--muted); }
+/* Sits inside .stat .lbl, which uppercases and letter-spaces. Undo both: this
+   is a sentence, and shouting it gives a routine carry-forward the weight of a
+   warning. */
+.carried { color: var(--muted); font-size: 10.5px; text-transform: none;
+  letter-spacing: 0; font-style: italic; }
+
 /* Overview cards */
 .cards {
   display: grid; gap: 12px;
   grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
   margin-bottom: 16px;
+}
+/* Nine cards: auto-fill gives 4+4+1 with an orphan at desktop width. */
+@media (min-width: 900px) {
+  .cards { grid-template-columns: repeat(3, 1fr); }
 }
 .cardlet {
   display: block; background: var(--surface);
@@ -84,11 +107,6 @@ h2 { font-size: 15px; }
 .cardlet .lbl { font-size: 12px; color: var(--muted); }
 .cardlet .big { font-size: 26px; font-weight: 700; color: var(--ink);
                 line-height: 1.15; margin: 2px 0; font-variant-numeric: tabular-nums; }
-.cardlet .mini { font-size: 11.5px; color: var(--muted); display: flex;
-                 gap: 10px; flex-wrap: wrap; }
-.cardlet .mini b { color: var(--ink-2); font-weight: 600; }
-.spark { width: 100%; height: 32px; margin-top: 6px; }
-.spark path { fill: none; stroke: var(--blue); stroke-width: 1.5; opacity: .85; }
 
 /* Stats row on metric pages */
 .stats {
@@ -140,8 +158,10 @@ h2 { font-size: 15px; }
 .tb .worst td:last-child { color: var(--red); }
 
 /* All-metrics list */
+/* Two columns at desktop width: three left no room for a long label, a
+   worded badge and a value on one line, so labels wrapped instead. */
 .mlist { display: grid; gap: 8px; margin: 10px 0 22px;
-         grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
+         grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); }
 .mrow {
   display: flex; align-items: center; gap: 8px;
   background: var(--surface); border: 1px solid var(--grid);
@@ -150,10 +170,14 @@ h2 { font-size: 15px; }
 .mrow:hover { border-color: var(--muted); text-decoration: none; }
 .mrow .mval { margin-left: auto; color: var(--ink); font-weight: 650;
               font-variant-numeric: tabular-nums; }
+/* Let the label give way, never the badge or the value. */
+.mrow > span:first-child { min-width: 0; }
+.mrow .badge, .mrow .mval { white-space: nowrap; flex-shrink: 0; }
 
 .foot { max-width: 1080px; margin: 0 auto; padding: 10px 16px 30px;
         color: var(--muted); font-size: 12px; }
 .foot a { color: var(--muted); }
+.foot p { margin: 4px 0; max-width: 720px; }
 
 @media (max-width: 640px) {
   .chart { height: 320px; }
@@ -162,15 +186,13 @@ h2 { font-size: 15px; }
   .cardlet .big { font-size: 22px; }
 }
 
-/* ---- feedback round 1 additions ---- */
-
-/* Overview card trio table (replaces sparklines) */
+/* Overview card trio table */
 .trio { width: 100%; border-collapse: collapse; margin-top: 8px;
         font-variant-numeric: tabular-nums; font-size: 12px; }
 .trio td { padding: 3px 0; border-top: 1px solid var(--grid); color: var(--muted); }
+.trio td:first-child { white-space: nowrap; }
 .trio td.num { text-align: right; color: var(--ink); font-weight: 600; padding-right: 10px; }
 .trio td.pctcell { text-align: right; color: var(--aqua); font-weight: 600; white-space: nowrap; }
-.cardlet .spark { display: none; }
 
 /* Range strip */
 .dist .controls .sub { font-size: 12px; }
@@ -189,6 +211,8 @@ h2 { font-size: 15px; }
                     font-size: 12.5px; color: var(--ink); background: var(--surface-2);
                     border: 1px solid var(--grid); border-radius: 6px;
                     padding: 8px 10px; display: inline-block; }
+.scroll-x { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.loaderr { color: var(--red); font-size: 13.5px; }
 .comps { width: 100%; border-collapse: collapse; margin-top: 10px;
          font-variant-numeric: tabular-nums; font-size: 13px; }
 .comps th { text-align: left; font-size: 11px; color: var(--muted);
@@ -200,6 +224,21 @@ h2 { font-size: 15px; }
 .comps tr.result td { color: var(--ink); font-weight: 700; border-top: 2px solid var(--muted); }
 
 /* Badges now carry words, so give them room */
-.badge { letter-spacing: .02em; text-transform: none; font-size: 11px; }
 
-.foot p { margin: 4px 0; max-width: 720px; }
+/* Phone overrides for the components table. In their own block at the END of
+   the file on purpose: these share specificity with the base .comps rules
+   above, and an earlier media block loses to them silently. */
+@media (max-width: 640px) {
+  /* Five columns must fit a phone rather than clip: the clipped column is
+     the one that says 'confidence', without which a bare 'high' beside a
+     bedtime reads as a rating of the value. */
+  .comps { font-size: 12px; }
+  .comps th, .comps td { padding: 5px 2px; }
+  /* 'MEASUREMENT' at 11px uppercase with .05em tracking is 113px on its own
+     and was the last 8px of overflow. */
+  .comps th { font-size: 10px; letter-spacing: .02em; }
+  .comps .badge { margin-left: 0; font-size: 10px; padding: 1px 6px; }
+  /* Drop the weight column on phones: it is a constant per component and
+     each component's page states it. Confidence stays; it carries meaning. */
+  .comps th:nth-child(4), .comps td:nth-child(4) { display: none; }
+}

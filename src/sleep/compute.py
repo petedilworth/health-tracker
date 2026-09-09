@@ -72,17 +72,60 @@ def compute(history: pd.DataFrame | None = None,
     return daily, summary
 
 
+# Fields that only exist once the detailed sleep session has synced. When Oura
+# has scored a night but these are still missing, the row is partial rather than
+# a night off, and the site should say which.
+SESSION_FIELDS = ["total_sleep_h", "hrv", "bedtime", "efficiency"]
+# Fields Oura posts from its own daily summaries, which land first.
+SUMMARY_FIELDS = ["oura_sleep_score", "restfulness", "temp_deviation",
+                  "oura_readiness_score"]
+
+
+def _partial_night(daily: pd.DataFrame) -> dict | None:
+    """Describe the newest row when Oura has scored it but the session is missing.
+
+    Rare — 16 of 2769 nights here — but it is always the newest row when it
+    happens, which is exactly where it causes confusion: derived series carry
+    forward onto it while measured ones stop a day earlier, so pages disagree.
+    """
+    if daily.empty:
+        return None
+    row = daily.iloc[-1]
+    present = [c for c in SUMMARY_FIELDS if c in daily.columns and pd.notna(row.get(c))]
+    missing = [c for c in SESSION_FIELDS if c in daily.columns and pd.isna(row.get(c))]
+    if not present or "total_sleep_h" not in missing:
+        return None
+    return {
+        "day": str(daily.index[-1].date()),
+        "oura_score": _maybe_round(row.get("oura_sleep_score")),
+        "missing": missing,
+    }
+
+
 def _summarise(daily: pd.DataFrame, n_raw: int, n_kept: int,
                dropped: dict, reliable_starts: dict) -> dict:
     scored = daily["sleep_score"].dropna()
     latest = daily[daily["sleep_score"].notna()].tail(1)
 
+    # The last night an actual sleep session was recorded. `daily` is reindexed
+    # to every calendar day and Oura posts a daily score before the session
+    # behind it always arrives, so the newest ROW is routinely later than the
+    # newest NIGHT. Reporting the row's date made the header contradict itself.
+    slept = daily[daily["total_sleep_h"].notna()]
+    data_through = str(slept.index.max().date()) if len(slept) else None
+
     summary = {
         "nights_recorded": n_raw,
         "nights_after_exclusions": n_kept,
+        # Rows with a sleep session, after exclusions. The one count the site
+        # should quote as "nights": nights_after_exclusions also includes
+        # partial rows with no sleep, and the daily frame includes every gap.
+        "nights_slept": int(len(slept)),
         "nights_scored": int(len(scored)),
+        "data_through": data_through,
+        "latest_partial": _partial_night(daily),
         "date_range": (
-            f"{daily.index.min().date()} → {daily.index.max().date()}"
+            f"{daily.index.min().date()} → {data_through or daily.index.max().date()}"
             if len(daily) else "—"
         ),
         "values_clamped": dropped,

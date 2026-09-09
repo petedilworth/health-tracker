@@ -59,11 +59,93 @@
   }
 
   function el(id) { return document.getElementById(id); }
+
+  // --- freshness ------------------------------------------------------------
+  // Both checks run against the VIEWER'S clock, not the build's, so they still
+  // fire if the site stops rebuilding altogether. A build-time-only check
+  // cannot warn you about a build that never happened.
+  var DAY_MS = 86400000;
+  var STALE_DATA_DAYS = 2;      // the job pulls last night daily; 2 is slack
+  // One run a day, and GitHub's queue adds 2.7-9.8h of jitter, so a perfectly
+  // healthy gap reaches ~31h. At 40h a single genuinely missed run still trips
+  // this, because that gap is 48h or more.
+  var STALE_BUILD_HOURS = 40;
+
+  function niceDate(iso) {
+    if (!iso) return "—";
+    var d = new Date(iso.length > 10 ? iso : iso + "T00:00:00");
+    if (isNaN(d)) return iso;
+    return d.toLocaleDateString(undefined,
+      { day: "numeric", month: "short", year: "numeric" });
+  }
+
+  function niceTime(iso) {
+    var d = new Date(iso);
+    if (isNaN(d)) return iso;
+    return d.toLocaleString(undefined,
+      { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
+  }
+
+  // The job is scheduled in UTC because cron has no timezone. Render those hours
+  // in the reader's own clock, so it stays right either side of a DST change
+  // without the build knowing anything about timezones.
+  function scheduleText(fresh) {
+    var hours = fresh.schedule_hours_utc;
+    if (!hours || !hours.length) return fresh.schedule || "";
+    var now = new Date();
+    var local = hours.map(function (h) {
+      return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(),
+                               now.getUTCDate(), h, 0, 0));
+    }).sort(function (a, b) { return a.getHours() - b.getHours(); })
+      .map(function (d) {
+        return d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+      });
+    // Sorted by LOCAL hour: 01:00 UTC is 9pm the previous Eastern day, so
+    // UTC order would read "9:00 PM and 9:00 AM".
+    return "scheduled daily around " + local.join(" and ");
+  }
+
+  function renderFreshness(fresh) {
+    if (!fresh) return;
+    var now = new Date();
+    var line = el("freshline");
+    if (line) {
+      line.textContent = "Sleep data through " + niceDate(fresh.data_through) +
+        " · checked " + niceTime(fresh.built) + " · " + scheduleText(fresh);
+    }
+
+    var bar = el("stalebar");
+    if (!bar) return;
+    var msgs = [];
+    if (fresh.data_through) {
+      var behind = Math.floor((now - new Date(fresh.data_through + "T00:00:00")) / DAY_MS);
+      if (behind > STALE_DATA_DAYS) {
+        msgs.push("<b>No new sleep data since " + niceDate(fresh.data_through) +
+          "</b> — that is " + behind + " days ago.");
+      }
+    }
+    if (fresh.built) {
+      var hours = (now - new Date(fresh.built)) / 3600000;
+      if (hours > STALE_BUILD_HOURS) {
+        msgs.push("<b>The daily update has not run since " +
+          niceTime(fresh.built) + "</b> — check the Actions tab.");
+      }
+    }
+    if (msgs.length) { bar.innerHTML = msgs.join(" "); bar.hidden = false; }
+  }
   function fetchJSON(path) {
     return fetch(path).then(function (r) {
       if (!r.ok) throw new Error("fetch failed: " + path);
       return r.json();
     });
+  }
+  // A static site fails quietly: a renamed slug or a half-finished deploy just
+  // leaves the page empty. Say so where the data was meant to go.
+  function showLoadError(targetId, err) {
+    var t = el(targetId);
+    if (t) t.innerHTML = "<p class='loaderr'>Could not load this page's data. " +
+      "Try a reload; if it persists, the last build may have failed.</p>";
+    if (window.console) console.error(err);
   }
 
   var BASE_LAYOUT = {
@@ -222,7 +304,10 @@
              '<div class="val">' + fmt(m.format, val) + "</div>" + pctLine +
              (extra ? '<div class="pct">' + extra + "</div>" : "") + "</div>";
     }
-    return block("Last night · " + (s.day || ""), s.value, s.pct,
+    var dayLbl = "Last night · " + (s.day || "");
+    if (s.carried) dayLbl += '<span class="carried"><br>carried forward, ' +
+      "no sleep recorded that night</span>";
+    return block(dayLbl, s.value, s.pct,
                  vsMedian(m.format, s.value, d.p50)) +
            block("7-day avg", s.avg7, s.pct7) +
            block("30-day avg", s.avg30, s.pct30);
@@ -250,7 +335,8 @@
       '<span>p75 ' + fmt(m.format, d.p75) + '</span>' +
       '<span>max ' + fmt(m.format, d.max) + '</span></div>';
     return '<div class="controls"><h2>Where last night sits</h2>' +
-      '<span class="sub">' + d.n.toLocaleString() + ' nights · shaded box is the middle 50%</span></div>' +
+      '<span class="sub">' + d.n.toLocaleString() + " " + (d.unit || "nights") +
+      ' · shaded box is the middle 50%</span></div>' +
       svg + labels;
   }
 
@@ -279,9 +365,11 @@
       return "<tr" + (c.result ? " class='result'" : "") + "><td>" + c.label + n +
         "</td><td class='num'>" + val + "</td></tr>";
     }).join("");
-    return "<h2>How it's calculated</h2><p>" + ex.text + "</p>" +
+    var paras = Array.isArray(ex.text) ? ex.text : [ex.text];
+    return "<h2>How it's calculated</h2>" +
+      paras.map(function (p) { return "<p>" + p + "</p>"; }).join("") +
       "<p class='formula'>" + ex.formula + "</p>" +
-      "<table class='comps'>" + head + rows + "</table>";
+      "<div class='scroll-x'><table class='comps'>" + head + rows + "</table></div>";
   }
 
   function tbHTML(payload, period) {
@@ -309,6 +397,7 @@
 
   function initMetric() {
     fetchJSON(P.root + "/data/m/" + P.slug + ".json").then(function (payload) {
+      renderFreshness(payload.fresh);
       el("stats").innerHTML = statsHTML(payload);
       var dist = el("dist");
       var distMarkup = distHTML(payload);
@@ -320,19 +409,42 @@
       }
       var exp = el("explain");
       var expMarkup = explainHTML(payload);
-      if (expMarkup) { exp.innerHTML = expMarkup; exp.hidden = false; }
+      if (expMarkup) {
+        exp.innerHTML = expMarkup; exp.hidden = false;
+        // Only if the table genuinely overflows: say so, rather than clipping
+        // a column silently.
+        var sx = exp.querySelector(".scroll-x");
+        if (sx && sx.scrollWidth > sx.clientWidth + 2) {
+          sx.insertAdjacentHTML("afterend", "<p class='sub'>Swipe the table sideways for more columns.</p>");
+        }
+      }
       render(el("chart"), payload, "daily");
       el("tb").innerHTML = tbHTML(payload, "all");
       wireSeg(el("view-toggle"), "view", function (v) { render(el("chart"), payload, v); });
       wireSeg(el("tb-toggle"), "period", function (p) { el("tb").innerHTML = tbHTML(payload, p); });
-    });
+    }).catch(function (err) { showLoadError("stats", err); });
   }
 
   // --- overview -------------------------------------------------------------
   function initOverview() {
     fetchJSON(P.root + "/data/overview.json").then(function (ov) {
-      el("ov-sub").textContent = (ov.latest_day ? "Latest night " + ov.latest_day + " · " : "") +
-        ov.nights + " nights · " + ov.range;
+      var since = (ov.range || "").split("→")[0].trim();
+      el("ov-sub").textContent = "Sleep data through " +
+        niceDate((ov.fresh || {}).data_through) + " · " +
+        Number(ov.nights).toLocaleString() + " nights since " + niceDate(since);
+      renderFreshness(ov.fresh);
+
+      var partial = ov.partial;
+      if (partial) {
+        var miss = (partial.missing || []).indexOf("hrv") >= 0
+          ? "duration, HRV and timing" : "the detail behind it";
+        el("ov-sub").insertAdjacentHTML("afterend",
+          '<div class="partialbox">' + niceDate(partial.day) +
+          " is partial. Oura has posted a score of " + Math.round(partial.oura_score) +
+          " but the sleep session has not synced, so " + miss +
+          " are still missing. Metrics that carry forward already show " +
+          niceDate(partial.day) + "; measured ones stop a day earlier.</div>");
+      }
       var flag = el("flag");
       if (ov.flag && ov.flag.raised) {
         flag.innerHTML = "<div class='flagbox'><b>Something's off:</b> " +
@@ -355,10 +467,11 @@
           row("30-day", c.avg30, c.pct30) +
           "</table></a>";
       }).join("");
-      return fetchJSON(P.root + "/data/m/sleep-score.json");
+      // The chart is the metric being optimised, which is also the lead card.
+      return fetchJSON(P.root + "/data/m/opportunity-debt-h.json");
     }).then(function (payload) {
       render(el("chart"), payload, "daily");
-    });
+    }).catch(function (err) { showLoadError("ov-sub", err); });
   }
 
   function initList() {

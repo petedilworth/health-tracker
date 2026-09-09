@@ -52,17 +52,21 @@ NEED_MIN_H, NEED_MAX_H = 6.0, 10.0
 
 # --- duration scoring -------------------------------------------------------
 # How sleep duration maps to 0-100 against need. Piecewise, because a single
-# linear ramp capped at need piles nights up on the ceiling: need *is* your P75,
-# so you meet or beat it a quarter of the time by construction, and 26% of all
-# nights scored exactly 100 — the same compression that made Oura's score
-# uninformative. Meeting need is now a strong 85; the last 15 points are
-# reserved for genuinely exceeding it.
+# linear ramp capped at need piles nights up on the ceiling: need is set from
+# your better-opportunity nights, so a large share of nights land on or past it
+# and a hard cap at 100 scored 26% of all nights identically — the same
+# compression that made Oura's score uninformative. Meeting need is a strong
+# 85; the last 15 points are reserved for genuinely exceeding it.
 DURATION_FLOOR_RATIO = 0.65     # ≤65% of need scores 0
 DURATION_NEED_SCORE = 85.0      # hitting need exactly
 DURATION_CEILING_RATIO = 1.20   # ≥120% of need scores 100
-DEBT_UPLIFT_PER_HOUR = 0.15
+
+# --- recommended tonight ----------------------------------------------------
+# Uplifts added on top of baseline need to give tonight's target. Kept out of
+# the need used to *measure* debt; see sleep_debt_and_need for why.
+DEBT_UPLIFT_PER_HOUR = 0.15     # repay this share of standing debt tonight
 DEBT_UPLIFT_CAP_H = 1.0
-ACTIVITY_UPLIFT_H = 0.25
+ACTIVITY_UPLIFT_H = 0.25        # after a top-quintile step day
 ACTIVITY_QUANTILE = 0.80
 
 # --- debt -------------------------------------------------------------------
@@ -98,8 +102,6 @@ DEBT_TAU_DAYS = DEBT_HALF_LIFE_DAYS / math.log(2)      # ~4.33
 # extended sleep before restriction bought a 2-3 day grace period before
 # performance degraded. Note the asymmetry caveat: recovery generally lags
 # accumulation in the literature, so 1:1 is the optimistic end of defensible.
-# In this dataset an uncapped floor is near-theoretical anyway — debt has gone
-# negative once in 2,485 nights, on the second night, before any history built.
 
 # --- readiness --------------------------------------------------------------
 # (source column, weight, higher_is_better). Everything is converted to a

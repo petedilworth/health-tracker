@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Entry point for the daily run.
 
-Current scope: pull recent Oura data, update history, and recompute all
-metrics into data/computed.csv. The website (Stage 3) and email (Stage 4)
-consume that file.
+Pull recent Oura data, update history, recompute every metric and rebuild the
+site in docs/. The computed frame is also written to data/computed.csv as a
+debugging snapshot; nothing reads it back.
 
 Usage:
     python run.py                  # pull, store, compute

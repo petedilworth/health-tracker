@@ -128,7 +128,7 @@ JSON_BUDGET_KB = 300
 # The cron's :23 minute is deliberately not surfaced. Naming a precise minute
 # implies an accuracy the queue does not have — runs have landed anywhere from
 # 2.7 to 9.8 hours after the trigger — so the site says "around" instead.
-SCHEDULE_UTC_HOURS = [14]
+SCHEDULE_UTC_HOURS = [14, 19, 23, 3]
 SCHEDULE_NOTE = ("scheduled daily around " +
                  " and ".join(f"{h:02d}:00" for h in SCHEDULE_UTC_HOURS) + " UTC")
 

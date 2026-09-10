@@ -296,22 +296,29 @@ def test_schedule_hours_travel_in_the_payload():
         assert f"{h:02d}:00" in fresh["schedule"]
 
 
-def test_single_run_lands_mid_morning_eastern():
-    """One run a day at 10am Eastern, drifting to 9am in winter.
+def test_runs_are_spread_across_the_eastern_day():
+    """Four attempts, morning to late evening, in both DST states.
 
-    Cron is UTC-only so the hour shifts across DST, which is accepted. Manual
-    dispatch covers the mornings the ring has not synced, so there is no second
-    run to guard.
+    Four rather than one because a single attempt has three ways to miss and
+    hit all of them: GitHub skipped 2026-09-09 entirely, its queue adds hours,
+    and the ring only uploads to Oura when the app is opened. The guard is
+    coverage — a morning attempt and a late-evening one, with no long dead
+    stretch between — not the exact hours, which drift with DST.
     """
     import datetime as dt
     from zoneinfo import ZoneInfo
     eastern = ZoneInfo("America/New_York")
-    assert len(site.SCHEDULE_UTC_HOURS) == 1, "one scheduled run a day"
+    assert len(site.SCHEDULE_UTC_HOURS) == 4, "four scheduled attempts a day"
     for month, label in ((7, "EDT"), (1, "EST")):
-        local = (dt.datetime(2026, month, 15, site.SCHEDULE_UTC_HOURS[0],
-                             tzinfo=dt.timezone.utc)
-                 .astimezone(eastern).hour)
-        assert local in (9, 10), f"{label}: run lands at {local}:00 Eastern"
+        local = sorted(
+            dt.datetime(2026, month, 15, h, tzinfo=dt.timezone.utc)
+            .astimezone(eastern).hour
+            for h in site.SCHEDULE_UTC_HOURS
+        )
+        assert 9 <= local[0] <= 11, f"{label}: first attempt at {local[0]}:00"
+        assert local[-1] >= 22, f"{label}: last attempt at {local[-1]}:00"
+        gaps = [b - a for a, b in zip(local, local[1:])]
+        assert max(gaps) <= 5, f"{label}: {max(gaps)}h dead stretch in {local}"
 
 
 # --- review round: one nights count, honest strip units, bedtime target -------

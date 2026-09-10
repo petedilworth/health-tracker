@@ -12,10 +12,17 @@ on:
     # so an odd minute is the one lever aimed at the queue itself rather than
     # at working around it. It may not be enough — watch the run times.
     #
-    # One run a day. If the ring has not synced by then, dispatch it by hand
-    # from the Actions tab: the 30-day lookback plus field-wise upsert makes a
-    # re-pull safe at any hour.
-    - cron: "23 14 * * *"
+    # Four attempts a day, not one, because a single attempt has three ways to
+    # miss and hit all three: GitHub skipped 2026-09-09 outright, the queue adds
+    # hours, and the ring only uploads to Oura when the phone app is opened — so
+    # at 10am the night often does not exist yet. Whichever attempt lands after
+    # you open the app is the one that catches up. Extra pulls cost nothing: the
+    # 30-day lookback plus field-wise upsert makes them idempotent, and
+    # public-repo Actions minutes are not billed.
+    - cron: "23 14 * * *"   # 10:23am Eastern (9:23am in winter)
+    - cron: "23 19 * * *"   #  3:23pm Eastern
+    - cron: "23 23 * * *"   #  7:23pm Eastern
+    - cron: "23 3 * * *"    # 11:23pm Eastern, on the previous Eastern day
   workflow_dispatch: {}
 
 permissions:
@@ -52,8 +59,9 @@ jobs:
           if git diff --cached --quiet; then
             echo "No changes to commit."
           else
-            # Eastern, not UTC: the 9pm run fires at 01:00 UTC, which is
-            # already tomorrow, so a UTC stamp would misdate the commit.
-            git commit -m "data: daily update ($(TZ=America/New_York date +%Y-%m-%d))"
+            # Eastern, not UTC: the late run fires after midnight UTC, so a UTC
+            # stamp would misdate it. The time is included because four runs a
+            # day would otherwise produce four identically-worded commits.
+            git commit -m "data: update ($(TZ=America/New_York date '+%Y-%m-%d %H:%M') ET)"
             git push
           fi

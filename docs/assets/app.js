@@ -66,10 +66,10 @@
   // cannot warn you about a build that never happened.
   var DAY_MS = 86400000;
   var STALE_DATA_DAYS = 2;      // the job pulls last night daily; 2 is slack
-  // One run a day, and GitHub's queue adds 2.7-9.8h of jitter, so a perfectly
-  // healthy gap reaches ~31h. At 40h a single genuinely missed run still trips
-  // this, because that gap is 48h or more.
-  var STALE_BUILD_HOURS = 40;
+  // Four runs a day: the largest healthy gap is the 11h from 11:23pm to
+  // 10:23am, plus up to ~10h of queue jitter. At 30h the banner still catches a
+  // genuinely dead pipeline inside a day and a half without crying wolf.
+  var STALE_BUILD_HOURS = 30;
 
   function niceDate(iso) {
     if (!iso) return "—";
@@ -100,9 +100,11 @@
       .map(function (d) {
         return d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
       });
-    // Sorted by LOCAL hour: 01:00 UTC is 9pm the previous Eastern day, so
-    // UTC order would read "9:00 PM and 9:00 AM".
-    return "scheduled daily around " + local.join(" and ");
+    // Sorted by LOCAL hour above: 03:00 UTC is 11pm the previous Eastern day,
+    // so UTC order would list it first instead of last.
+    var list = local.length < 2 ? local[0]
+      : local.slice(0, -1).join(", ") + " and " + local[local.length - 1];
+    return "scheduled daily around " + list;
   }
 
   function renderFreshness(fresh) {

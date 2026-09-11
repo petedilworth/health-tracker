@@ -263,6 +263,9 @@ def test_shell_carries_the_stale_bar_and_freshness_line(tmp_path, monkeypatch):
     for page in ("index.html", "metrics/sleep-debt-h.html"):
         html = (tmp_path / page).read_text()
         assert 'id="stalebar"' in html, page
+        # Always visible: "no banner" was the failure mode, so it must not
+        # start hidden and wait for a threshold.
+        assert 'id="stalebar" hidden' not in html, page
         assert 'id="freshline"' in html, page
 
 

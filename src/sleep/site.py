@@ -700,7 +700,7 @@ def _shell(title: str, body: str, root: str) -> str:
   <a href="{root}/index.html">Overview</a>
   <a href="{root}/metrics/index.html">All metrics</a>
 </nav>
-<div class="stalebar" id="stalebar" hidden></div>
+<div class="stalebar" id="stalebar">checking whether last night is in…</div>
 {body}
 <footer class="foot">
   <p class="fresh" id="freshline"></p>

@@ -40,7 +40,15 @@ def ingest_range(start: dt.date, end: dt.date) -> pd.DataFrame:
     history = store.load_history(config.HISTORY_PATH)
     before = len(history)
 
-    for chunk_start, chunk_end in _chunks(start, end, CHUNK_DAYS):
+    # Oura's sleep endpoint omits sessions dated end_date itself, while the
+    # daily endpoints include that day: across 14 consecutive runs the daily
+    # score for the run's own date was present 8 times and the session never
+    # was, and each night's session first appeared in the first run after
+    # 00:00 UTC — the moment end_date moved past it. So ask for one day past
+    # what the caller wants. If end_date is exclusive this includes today; if
+    # it is inclusive, tomorrow is empty and upsert ignores nothing. Without
+    # this, last night could not appear on the site before 8pm Eastern.
+    for chunk_start, chunk_end in _chunks(start, end + dt.timedelta(days=1), CHUNK_DAYS):
         log.info("Pulling %s -> %s", chunk_start, chunk_end)
         payloads = client.fetch_all(chunk_start, chunk_end)
         log.info(

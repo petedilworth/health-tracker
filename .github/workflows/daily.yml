@@ -12,13 +12,16 @@ on:
     # so an odd minute is the one lever aimed at the queue itself rather than
     # at working around it. It may not be enough — watch the run times.
     #
-    # Four attempts a day, not one, because a single attempt has three ways to
-    # miss and hit all three: GitHub skipped 2026-09-09 outright, the queue adds
-    # hours, and the ring only uploads to Oura when the phone app is opened — so
-    # at 10am the night often does not exist yet. Whichever attempt lands after
-    # you open the app is the one that catches up. Extra pulls cost nothing: the
-    # 30-day lookback plus field-wise upsert makes them idempotent, and
-    # public-repo Actions minutes are not billed.
+    # Four attempts a day, not one, because GitHub's scheduler is unreliable:
+    # it skipped 2026-09-09 outright, and every run in a two-week sample was
+    # 2.7 to 9.8 hours late. Four cheap idempotent attempts make a skipped or
+    # delayed one stop mattering. (Oura can also lag in releasing a night's
+    # session, and the ring uploads only when the app is opened; a later
+    # attempt covers those too — but note the days-long "last night is
+    # missing" problem was our own end_date bug, fixed in ingest.py, not
+    # either of these.) Extra pulls cost nothing: the 30-day lookback plus
+    # field-wise upsert makes them idempotent, and public-repo Actions
+    # minutes are not billed.
     - cron: "23 14 * * *"   # 10:23am Eastern (9:23am in winter)
     - cron: "23 19 * * *"   #  3:23pm Eastern
     - cron: "23 23 * * *"   #  7:23pm Eastern

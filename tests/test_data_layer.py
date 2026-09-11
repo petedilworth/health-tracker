@@ -172,3 +172,43 @@ def test_every_metric_key_is_a_stored_column():
         if metric.key in derived:
             continue
         assert metric.key in RAW_COLUMNS, f"{metric.key} missing from RAW_COLUMNS"
+
+
+# --- the end_date hole ----------------------------------------------------------
+
+def test_ingest_requests_one_day_past_the_requested_end(monkeypatch):
+    """Oura's sleep endpoint omits sessions dated end_date itself, while the
+    daily endpoints include that day. Across 14 consecutive runs the daily
+    score for the run's own date was present 8 times and the session never
+    was; each night's session first appeared in the first run after 00:00 UTC.
+    So the client must be asked for one day past what the caller wants, or
+    last night cannot appear on the site before 8pm Eastern."""
+    import datetime as dt
+    import pandas as pd
+    from sleep import ingest
+
+    seen = []
+
+    class StubClient:
+        def __init__(self, *a, **k): pass
+        def fetch_all(self, start, end):
+            seen.append((start, end))
+            return {"sleep": [], "daily_sleep": [], "daily_activity": [],
+                    "daily_readiness": []}
+
+    class Settings:
+        oura_pat = "x"; verify_tls = True
+
+    monkeypatch.setattr(ingest, "OuraClient", StubClient)
+    monkeypatch.setattr(ingest.config, "load_settings", lambda **k: Settings())
+    monkeypatch.setattr(ingest.config, "ensure_dirs", lambda: None)
+    monkeypatch.setattr(ingest.store, "load_history", lambda p: pd.DataFrame())
+    monkeypatch.setattr(ingest.store, "save_history", lambda df, p: None)
+
+    day = dt.date(2026, 9, 11)
+    ingest.ingest_range(day, day)
+
+    assert seen, "the client was never asked for anything"
+    assert seen[0][0] == day
+    assert seen[-1][1] == day + dt.timedelta(days=1), (
+        f"asked through {seen[-1][1]}, must be one day past {day}")

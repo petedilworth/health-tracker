@@ -76,7 +76,11 @@ def compute(history: pd.DataFrame | None = None,
 # has scored a night but these are still missing, the row is partial rather than
 # a night off, and the site should say which.
 SESSION_FIELDS = ["total_sleep_h", "hrv", "bedtime", "efficiency"]
-# Fields Oura posts from its own daily summaries, which land first.
+# Fields from Oura's daily-summary endpoints. For a given day these come back
+# before the sleep endpoint returns the session: the daily endpoints include
+# end_date, the sleep endpoint does not, so the pull asks one day ahead (see
+# ingest.ingest_range). A partial row now means Oura genuinely has not
+# released the session yet, not that we failed to ask for it.
 SUMMARY_FIELDS = ["oura_sleep_score", "restfulness", "temp_deviation",
                   "oura_readiness_score"]
 
@@ -84,9 +88,11 @@ SUMMARY_FIELDS = ["oura_sleep_score", "restfulness", "temp_deviation",
 def _partial_night(daily: pd.DataFrame) -> dict | None:
     """Describe the newest row when Oura has scored it but the session is missing.
 
-    Rare — 16 of 2769 nights here — but it is always the newest row when it
-    happens, which is exactly where it causes confusion: derived series carry
-    forward onto it while measured ones stop a day earlier, so pages disagree.
+    It is always the newest row when it happens, which is exactly where it
+    causes confusion: derived series carry forward onto it while measured ones
+    stop a day earlier, so pages disagree. Until the pull asked one day ahead
+    this happened on every single run; it should now be rare and mean real
+    Oura-side delay.
     """
     if daily.empty:
         return None

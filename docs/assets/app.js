@@ -496,7 +496,7 @@
         el("ov-sub").insertAdjacentHTML("afterend",
           '<div class="partialbox">' + niceDate(partial.day) +
           " is partial. Oura has posted a score of " + Math.round(partial.oura_score) +
-          " but the sleep session has not synced, so " + miss +
+          " but has not released the session yet, so " + miss +
           " are still missing. Metrics that carry forward already show " +
           niceDate(partial.day) + "; measured ones stop a day earlier.</div>");
       }

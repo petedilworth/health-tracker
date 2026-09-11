@@ -65,7 +65,9 @@
   // fire if the site stops rebuilding altogether. A build-time-only check
   // cannot warn you about a build that never happened.
   var DAY_MS = 86400000;
-  var STALE_DATA_DAYS = 2;      // the job pulls last night daily; 2 is slack
+  // Before this hour, "today" means yesterday: at 1am you may not have slept
+  // yet, and the strip must not claim last night is missing.
+  var NEW_DAY_HOUR = 6;
   // Four runs a day: the largest healthy gap is the 11h from 11:23pm to
   // 10:23am, plus up to ~10h of queue jitter. At 30h the banner still catches a
   // genuinely dead pipeline inside a day and a half without crying wolf.
@@ -107,6 +109,38 @@
     return "scheduled daily around " + list;
   }
 
+  // Local midnight of a calendar date, so day arithmetic ignores DST and
+  // the viewer's offset.
+  function localMidnight(d) { return new Date(d.getFullYear(), d.getMonth(), d.getDate()); }
+
+  // The night the viewer expects to see: the one that ended this morning.
+  function expectedNight(now) {
+    var d = new Date(now);
+    if (d.getHours() < NEW_DAY_HOUR) d.setDate(d.getDate() - 1);
+    return localMidnight(d);
+  }
+
+  // First scheduled attempt after now, in the viewer's clock, or null.
+  function nextAttempt(fresh, now) {
+    var hours = fresh.schedule_hours_utc || [], best = null;
+    hours.forEach(function (h) {
+      for (var k = 0; k < 2; k++) {
+        var d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(),
+                                  now.getUTCDate() + k, h, 23, 0));
+        if (d > now && (!best || d < best)) best = d;
+      }
+    });
+    return best;
+  }
+
+  function setStrip(state, html) {
+    var bar = el("stalebar");
+    if (!bar) return;
+    bar.className = "stalebar " + state;
+    bar.innerHTML = html;
+    bar.hidden = false;
+  }
+
   function renderFreshness(fresh) {
     if (!fresh) return;
     var now = new Date();
@@ -115,28 +149,46 @@
       line.textContent = "Sleep data through " + niceDate(fresh.data_through) +
         " · checked " + niceTime(fresh.built) + " · " + scheduleText(fresh);
     }
+    if (!el("stalebar")) return;
 
-    var bar = el("stalebar");
-    if (!bar) return;
-    var msgs = [];
-    if (fresh.data_through) {
-      var behind = Math.floor((now - new Date(fresh.data_through + "T00:00:00")) / DAY_MS);
-      if (behind > STALE_DATA_DAYS) {
-        msgs.push("<b>No new sleep data since " + niceDate(fresh.data_through) +
-          "</b> — that is " + behind + " days ago.");
-      }
+    var checked = fresh.built ? " · checked " + niceTime(fresh.built) : "";
+    var buildStale = fresh.built &&
+      (now - new Date(fresh.built)) / 3600000 > STALE_BUILD_HOURS;
+
+    if (!fresh.data_through) {
+      setStrip("bad", "<b>No sleep data at all</b>" + checked);
+      return;
     }
-    if (fresh.built) {
-      var hours = (now - new Date(fresh.built)) / 3600000;
-      if (hours > STALE_BUILD_HOURS) {
-        msgs.push("<b>The daily update has not run since " +
-          niceTime(fresh.built) + "</b> — check the Actions tab.");
-      }
+    var have = localMidnight(new Date(fresh.data_through + "T00:00:00"));
+    var behind = Math.round((expectedNight(now) - have) / DAY_MS);
+
+    var next = nextAttempt(fresh, now);
+    var nextText = next ? " · next attempt around " +
+      next.toLocaleTimeString(undefined, { hour: "numeric" }) : "";
+
+    if (behind <= 0 && !buildStale) {
+      setStrip("ok", "<b>Up to date</b> · last night, " +
+        niceDate(fresh.data_through) + checked);
+    } else if (behind === 1 && !buildStale) {
+      setStrip("warn", "<b>Last night isn't in yet</b> · showing through " +
+        niceDate(fresh.data_through) + checked + nextText);
+    } else {
+      var head = behind >= 2
+        ? "<b>" + behind + " nights missing</b> · no sleep data since " +
+          niceDate(fresh.data_through)
+        : "<b>Up to date through " + niceDate(fresh.data_through) + "</b>";
+      var tail = buildStale
+        ? " · <b>the update has not run since " + niceTime(fresh.built) +
+          "</b> — check the Actions tab"
+        : checked + nextText;
+      setStrip("bad", head + tail);
     }
-    if (msgs.length) { bar.innerHTML = msgs.join(" "); bar.hidden = false; }
   }
   function fetchJSON(path) {
-    return fetch(path).then(function (r) {
+    // GitHub Pages serves JSON with max-age=600 and offers no way to change
+    // it. A freshness strip computed from cached JSON would confidently report
+    // the wrong day, so bypass the HTTP cache for data.
+    return fetch(path, { cache: "no-store" }).then(function (r) {
       if (!r.ok) throw new Error("fetch failed: " + path);
       return r.json();
     });
@@ -144,6 +196,7 @@
   // A static site fails quietly: a renamed slug or a half-finished deploy just
   // leaves the page empty. Say so where the data was meant to go.
   function showLoadError(targetId, err) {
+    setStrip("bad", "<b>Could not load this page's data</b> · try a reload");
     var t = el(targetId);
     if (t) t.innerHTML = "<p class='loaderr'>Could not load this page's data. " +
       "Try a reload; if it persists, the last build may have failed.</p>";

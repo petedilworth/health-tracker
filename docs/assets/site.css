@@ -68,14 +68,22 @@ h2 { font-size: 15px; }
 .flagbox b { color: var(--red); }
 .allclear { color: var(--muted); font-size: 12.5px; margin: 0 0 16px; }
 
-/* Stale-data bar. Full-bleed above the page so it cannot be scrolled past on
-   a phone, and orange rather than red: out of date is a warning, not an alarm. */
+/* Freshness strip. Full-bleed above the page so it cannot be scrolled past on
+   a phone, and ALWAYS shown: "no banner" was the failure mode, because a missing
+   night looked identical to a normal day. Green when last night is in, orange
+   when one night is missing, red when more are or the pipeline has stopped. */
 .stalebar {
-  border-bottom: 1px solid var(--orange);
-  background: #2a1a0d; color: #f0c9a0;
+  border-bottom: 1px solid var(--grid);
+  background: var(--surface); color: var(--muted);
   padding: 10px 16px; font-size: 13.5px; text-align: center;
 }
-.stalebar b { color: var(--orange); }
+.stalebar b { color: inherit; }
+.stalebar.ok   { border-color: var(--aqua);   background: #0e2119; color: #9fd4b8; }
+.stalebar.ok b { color: var(--aqua); }
+.stalebar.warn   { border-color: var(--orange); background: #2a1a0d; color: #f0c9a0; }
+.stalebar.warn b { color: var(--orange); }
+.stalebar.bad   { border-color: var(--red);    background: #2d1510; color: #f0b9ae; }
+.stalebar.bad b { color: var(--red); }
 .partialbox {
   border: 1px solid var(--grid); border-radius: var(--radius);
   background: var(--surface); color: var(--ink-2);

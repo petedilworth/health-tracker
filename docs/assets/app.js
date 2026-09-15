@@ -9,8 +9,17 @@
     muted: "#898781", grid: "#2c2c2a",
     blue: "#3987e5", aqua: "#199e70", orange: "#d95926", red: "#e66767"
   };
-  var TOUCH = "ontouchstart" in window || navigator.maxTouchPoints > 0;
-  var DEFAULT_DAYS = 120;   // charts open on the last ~4 months
+  // How far back each view opens, in days. null = all-time. Daily is dense
+  // enough that four months fills the width; the aggregated views are
+  // sparser but six years of weekly points is still a wall, so they open on
+  // the last year and the buttons take you wider.
+  var DEFAULT_WINDOW = { daily: 120, weekly: 365, quarterly: 365, annual: null };
+  var RANGE_OPTIONS = {
+    daily:     [["4m", 120], ["1y", 365], ["All", null]],
+    weekly:    [["1y", 365], ["3y", 3 * 365], ["All", null]],
+    quarterly: [["1y", 365], ["3y", 3 * 365], ["All", null]],
+    annual:    []
+  };
 
   // --- formatters -----------------------------------------------------------
   function fmtClock(v) {
@@ -210,27 +219,19 @@
     hovermode: "x unified",
     hoverlabel: { bgcolor: C.page, bordercolor: C.grid, font: { color: C.ink2 } },
     dragmode: "pan",
-    xaxis: {
-      gridcolor: C.grid, linecolor: C.grid, zeroline: false,
-      rangeselector: {
-        x: 1, xanchor: "right", y: 1.02, yanchor: "bottom",
-        bgcolor: "#232322", activecolor: C.page, bordercolor: C.grid,
-        borderwidth: 1, font: { color: C.ink2, size: 11 },
-        buttons: [
-          { count: 4, label: "4m", step: "month", stepmode: "backward" },
-          { count: 1, label: "1y", step: "year", stepmode: "backward" },
-          { step: "all", label: "All" }
-        ]
-      }
-    },
+    // Range buttons are HTML (#range-toggle), not Plotly's rangeselector: that
+    // one had to be dropped on phones for space, which left them with no way
+    // to zoom at all.
+    xaxis: { gridcolor: C.grid, linecolor: C.grid, zeroline: false },
     yaxis: { gridcolor: C.grid, linecolor: C.grid, zeroline: false },
     legend: { orientation: "h", y: 1.06, x: 0, font: { size: 11.5 } },
     showlegend: true
   };
-  // scrollZoom is what enables two-finger pinch in Plotly; on desktop it would
-  // hijack the mouse wheel from page scrolling, so it's touch-only.
-  var CONFIG = { displayModeBar: false, responsive: true,
-                 scrollZoom: TOUCH, doubleClick: "reset" };
+  // No scrollZoom: on desktop it steals the wheel from page scrolling, and on
+  // phones it does nothing, because this Plotly build (3.8.2) has no
+  // cartesian pinch gesture at all; its drag code reads only the first touch.
+  // Pinch is implemented by hand in enablePinch below.
+  var CONFIG = { displayModeBar: false, responsive: true, doubleClick: "reset" };
 
   function clockAxis(values) {
     var lo = Infinity, hi = -Infinity;
@@ -253,12 +254,85 @@
     return out;
   }
 
-  function defaultRange(dates) {
-    if (!dates.length) return null;
+  function defaultRange(dates, days) {
+    if (!dates.length || days == null) return null;
     var end = new Date(dates[dates.length - 1] + "T00:00:00Z");
-    var start = new Date(end.getTime() - DEFAULT_DAYS * 864e5);
+    var start = new Date(end.getTime() - days * 864e5);
     end = new Date(end.getTime() + 3 * 864e5);
     return [start.toISOString().slice(0, 10), end.toISOString().slice(0, 10)];
+  }
+
+  // --- pinch to zoom --------------------------------------------------------
+  // Two fingers on the plot scale the x-axis about the point between them, so
+  // what you're looking at stays under your fingers. Capture phase so Plotly
+  // never sees the second finger as the start of a one-finger pan. One finger
+  // is left alone: Plotly pans with it, and .chart's touch-action lets a
+  // vertical swipe scroll the page as usual.
+  var DAY_MS = 864e5;
+  function enablePinch(gd) {
+    if (gd._pinchWired) return;
+    gd._pinchWired = true;
+    var pinch = null, pending = null;
+
+    function dist(t) {
+      var dx = t[0].clientX - t[1].clientX, dy = t[0].clientY - t[1].clientY;
+      return Math.sqrt(dx * dx + dy * dy) || 1;
+    }
+    function midX(t) { return (t[0].clientX + t[1].clientX) / 2; }
+    function xRangeMs(ax) {
+      return [Date.parse(ax.range[0]), Date.parse(ax.range[1])];
+    }
+    function fullSpanMs() {
+      var lo = Infinity, hi = -Infinity;
+      (gd.data || []).forEach(function (tr) {
+        (tr.x || []).forEach(function (x) {
+          var t = Date.parse(x);
+          if (!isNaN(t)) { lo = Math.min(lo, t); hi = Math.max(hi, t); }
+        });
+      });
+      return isFinite(lo) ? Math.max(hi - lo + 3 * DAY_MS, 2 * DAY_MS) : null;
+    }
+
+    gd.addEventListener("touchstart", function (e) {
+      if (e.touches.length !== 2) return;
+      var fl = gd._fullLayout, ax = fl && fl.xaxis;
+      if (!ax || !ax.range) return;
+      e.preventDefault(); e.stopPropagation();
+      var left = gd.getBoundingClientRect().left + fl._size.l;
+      var r = xRangeMs(ax), w = fl._size.w || 1;
+      var frac = (midX(e.touches) - left) / w;
+      pinch = { d0: dist(e.touches), r0: r, span0: r[1] - r[0],
+                anchor: r[0] + frac * (r[1] - r[0]), frac: frac,
+                full: fullSpanMs() };
+    }, { capture: true, passive: false });
+
+    gd.addEventListener("touchmove", function (e) {
+      if (!pinch || e.touches.length !== 2) return;
+      e.preventDefault(); e.stopPropagation();
+      var span = pinch.span0 * pinch.d0 / dist(e.touches);
+      span = Math.max(2 * DAY_MS, Math.min(pinch.full || span, span));
+      var lo = pinch.anchor - pinch.frac * span;
+      pending = [new Date(lo).toISOString(), new Date(lo + span).toISOString()];
+      if (!pinch.raf) {
+        pinch.raf = requestAnimationFrame(function () {
+          if (pinch) pinch.raf = null;
+          if (pending) Plotly.relayout(gd, { "xaxis.range": pending });
+          pending = null;
+        });
+      }
+    }, { capture: true, passive: false });
+
+    function end(e) {
+      if (!pinch) return;
+      if (e.touches.length >= 2) return;
+      e.stopPropagation();
+      pinch = null;
+      // A hand-zoomed chart matches no preset, so no button should claim it.
+      var seg = document.getElementById("range-toggle");
+      if (seg) seg.querySelectorAll("button").forEach(function (b) { b.classList.remove("on"); });
+    }
+    gd.addEventListener("touchend", end, { capture: true });
+    gd.addEventListener("touchcancel", end, { capture: true });
   }
 
   // --- metric page ----------------------------------------------------------
@@ -335,20 +409,35 @@
     };
   }
 
-  function render(chartEl, payload, view) {
+  // days: window to open on; undefined = the view's default, null = all-time.
+  function render(chartEl, payload, view, days) {
     var built = view === "daily" ? dailyTraces(payload) : aggTraces(payload, view);
     var layout = deepMerge(BASE_LAYOUT, {});
     if (payload.meta.format === "clock") layout.yaxis = deepMerge(layout.yaxis, clockAxis(built.yvals));
-    // Aggregated views are already sparse; only the daily view opens zoomed in.
-    if (view === "daily") {
-      var r = defaultRange(built.dates);
-      if (r) layout.xaxis.range = r;
-    }
-    if (window.innerWidth < 640) {
-      delete layout.xaxis.rangeselector;   // too cramped next to the legend
-      layout.margin.l = 48;
-    }
+    if (days === undefined) days = DEFAULT_WINDOW[view];
+    var r = defaultRange(built.dates, days);
+    if (r) layout.xaxis.range = r; else layout.xaxis.autorange = true;
+    if (window.innerWidth < 640) layout.margin.l = 48;
+    chartEl.dataset.view = view;
     Plotly.react(chartEl, built.traces, layout, CONFIG);
+    enablePinch(chartEl);
+  }
+
+  // The range buttons live beside the view toggle and change with it: "4m"
+  // means nothing on a quarterly chart.
+  function rangeButtons(seg, view) {
+    if (!seg) return;
+    var opts = RANGE_OPTIONS[view] || [], dflt = DEFAULT_WINDOW[view];
+    seg.hidden = !opts.length;
+    seg.innerHTML = opts.map(function (o) {
+      var on = (o[1] === dflt) ? ' class="on"' : "";
+      return "<button data-days=\"" + (o[1] == null ? "" : o[1]) + "\"" + on + ">" + o[0] + "</button>";
+    }).join("");
+  }
+  function wireRange(seg, chartEl, payload) {
+    wireSeg(seg, "days", function (d) {
+      render(chartEl, payload, chartEl.dataset.view || "daily", d === "" ? null : Number(d));
+    });
   }
 
   function statsHTML(payload) {
@@ -474,8 +563,13 @@
         }
       }
       render(el("chart"), payload, "daily");
+      rangeButtons(el("range-toggle"), "daily");
+      wireRange(el("range-toggle"), el("chart"), payload);
       el("tb").innerHTML = tbHTML(payload, "all");
-      wireSeg(el("view-toggle"), "view", function (v) { render(el("chart"), payload, v); });
+      wireSeg(el("view-toggle"), "view", function (v) {
+        render(el("chart"), payload, v);
+        rangeButtons(el("range-toggle"), v);
+      });
       wireSeg(el("tb-toggle"), "period", function (p) { el("tb").innerHTML = tbHTML(payload, p); });
     }).catch(function (err) { showLoadError("stats", err); });
   }
@@ -526,6 +620,8 @@
       return fetchJSON(P.root + "/data/m/opportunity-debt-h.json");
     }).then(function (payload) {
       render(el("chart"), payload, "daily");
+      rangeButtons(el("range-toggle"), "daily");
+      wireRange(el("range-toggle"), el("chart"), payload);
     }).catch(function (err) { showLoadError("ov-sub", err); });
   }
 

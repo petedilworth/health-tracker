@@ -360,3 +360,25 @@ def test_explanations_are_paragraph_lists_that_survive_the_payload():
         assert all(isinstance(p, str) and p.strip() for p in text), key
         # No paragraph should be a wall on its own.
         assert max(len(p.split()) for p in text) <= 120, key
+
+
+# --- chart controls -----------------------------------------------------------
+
+ASSETS = Path(__file__).resolve().parents[1] / "docs" / "assets"
+
+
+def test_every_chart_page_carries_the_range_toggle():
+    # Range buttons are HTML beside the view toggle. Plotly's own rangeselector
+    # had to be dropped on phones for space, which left them with no zoom.
+    assert 'id="range-toggle"' in site._metric_page(_spec("bedtime"))
+    assert 'id="range-toggle"' in site._overview_page()
+
+
+def test_app_js_owns_range_and_pinch():
+    js = (ASSETS / "app.js").read_text()
+    assert "rangeselector: {" not in js
+    # Plotly 3.8.2 has no cartesian pinch; the hand-rolled one must stay.
+    assert '"touchmove"' in js and '"touchstart"' in js
+    # Aggregated views open on a year, annual on everything.
+    assert "weekly: 365" in js and "quarterly: 365" in js and "annual: null" in js
+    assert "touch-action: pan-y" in (ASSETS / "site.css").read_text()

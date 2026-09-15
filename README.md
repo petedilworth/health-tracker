@@ -156,7 +156,7 @@ that actually discriminates.
 Generated into `docs/` on every run and served by GitHub Pages: a dark,
 data-dense overview (eight headline cards, health-flag banner, sleep-score
 chart) plus a deep-dive page per metric — interactive Plotly charts with
-Daily/Weekly/Quarterly/Annual views, range selection, best/worst-10 lists
+Daily/Weekly/Quarterly/Annual views, range buttons, pinch-to-zoom on phones, best/worst-10 lists
 filterable by period, and a confidence badge on every page. Low-confidence
 metrics (REM, deep, light) render de-emphasised with a ±1 SD band, so the chart
 itself says "directional, not exact". Percentiles always read "better than X%

@@ -744,6 +744,7 @@ def _metric_page(spec: PageSpec) -> str:
         <button data-view="quarterly">Quarterly</button>
         <button data-view="annual">Annual</button>
       </div>
+      <div class="seg" id="range-toggle" role="tablist"></div>
     </div>
     <div id="chart" class="chart"></div>
   </section>
@@ -773,7 +774,8 @@ def _overview_page() -> str:
   <section class="cards" id="cards"></section>
   <section class="card">
     <div class="controls"><h2>Sleep opportunity debt</h2>
-      <a class="sub" href="metrics/opportunity-debt-h.html">how it's calculated →</a></div>
+      <a class="sub" href="metrics/opportunity-debt-h.html">how it's calculated →</a>
+      <div class="seg" id="range-toggle" role="tablist"></div></div>
     <div id="chart" class="chart chart-tall"></div>
   </section>
 </main>

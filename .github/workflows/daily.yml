@@ -2,8 +2,8 @@ name: Daily Sleep Analytics
 
 on:
   schedule:
-    # 14:00 UTC is 10am Eastern in summer, 9am in winter. Cron has no timezone,
-    # and the winter drift is accepted.
+    # 12:23 UTC is 8:23am Eastern in summer, 7:23am in winter. Cron has no
+    # timezone, and the winter drift is accepted.
     #
     # Minute 23, not 00, on evidence. All 13 scheduled runs between 2026-08-27
     # and 09-08 fired against a :00 cron and every one was late: 2.7h at best,
@@ -12,20 +12,18 @@ on:
     # so an odd minute is the one lever aimed at the queue itself rather than
     # at working around it. It may not be enough — watch the run times.
     #
-    # Four attempts a day, not one, because GitHub's scheduler is unreliable:
-    # it skipped 2026-09-09 outright, and every run in a two-week sample was
-    # 2.7 to 9.8 hours late. Four cheap idempotent attempts make a skipped or
-    # delayed one stop mattering. (Oura can also lag in releasing a night's
-    # session, and the ring uploads only when the app is opened; a later
-    # attempt covers those too — but note the days-long "last night is
-    # missing" problem was our own end_date bug, fixed in ingest.py, not
-    # either of these.) Extra pulls cost nothing: the 30-day lookback plus
-    # field-wise upsert makes them idempotent, and public-repo Actions
-    # minutes are not billed.
-    - cron: "23 14 * * *"   # 10:23am Eastern (9:23am in winter)
-    - cron: "23 19 * * *"   #  3:23pm Eastern
-    - cron: "23 23 * * *"   #  7:23pm Eastern
-    - cron: "23 3 * * *"    # 11:23pm Eastern, on the previous Eastern day
+    # One attempt a day, in the morning. Four spread attempts were tried from
+    # 2026-09-11 to 10-10 to ride out GitHub's skips and multi-hour delays, but
+    # in practice the owner opens the Oura app first thing and runs this by
+    # hand right after, so the later attempts only ever re-fetched what the
+    # manual run had already landed. One scheduled attempt for the mornings
+    # nobody remembers; workflow_dispatch for the rest. Re-runs are harmless:
+    # the 30-day lookback plus field-wise upsert makes them idempotent, and
+    # public-repo Actions minutes are not billed.
+    #
+    # (The days-long "last night is missing" problem of early September was
+    # our own end_date bug, fixed in ingest.py, not the schedule.)
+    - cron: "23 12 * * *"   # 8:23am Eastern (7:23am in winter)
   workflow_dispatch: {}
 
 permissions:

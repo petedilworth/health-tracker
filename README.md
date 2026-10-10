@@ -142,6 +142,7 @@ Two conventions worth knowing:
 | **Sleep debt** | Cumulative shortfall against need, halving every 3 nights. That half-life is tuned to felt recovery so a good run visibly pays off, not to the recovery literature, which finds objective recovery slower. Sleeping past need repays it 1:1 and can bank a surplus; naps count |
 | **Sleep opportunity** | Time in bed against your declared 8h target, with a nightly bedtime target |
 | **Sleep opportunity debt** | The same accumulator as sleep debt, run on time in bed. The controllable half: you choose when the light goes off, and the ring measures that directly |
+| **Bedtime game** | Three mechanics on the overview, all keyed to the 22:15 target: a rolling 30-night ladder (nights in bed by 23:00, 22:45, 22:30, 22:15, each with its best-ever 30-night count), personal bests (longest runs in bed by 23:00, by 22:15, and with 8h in bed), and a line that starts at 23:00 and moves 15 minutes earlier each time two consecutive 7-night weeks hit it on 5 nights or more, down to the target. Rules live in `src/sleep/bedtime.py` |
 | **SRI** | Sleep Regularity Index, 0–100, over a trailing 30 days |
 | **Readiness** | HRV, resting HR, respiratory rate and last night's score |
 | **Health flag** | Fires when temperature or respiratory rate exceeds 2 SD from its seasonal baseline |

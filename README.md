@@ -79,7 +79,7 @@ from the GitHub mobile app).
 
 | Workflow | What it does |
 |---|---|
-| **Daily Sleep Analytics** | Four attempts a day: 10:23am, 3:23pm, 7:23pm and 11:23pm Eastern. Each pulls the last 30 days, updates `data/history.csv` and rebuilds the site. Four rather than one because GitHub queues scheduled jobs for hours and sometimes skips them entirely; a later attempt also covers the odd Oura-side delay or an unsynced ring. The pull requests one day past today, because Oura's sleep endpoint excludes the `end_date` day while its daily endpoints include it — without that, last night could not appear before 8pm Eastern. |
+| **Daily Sleep Analytics** | Once a day at 8:23am Eastern (7:23am in winter; GitHub often runs it hours late). Pulls the last 30 days, updates `data/history.csv` and rebuilds the site. Run it by hand from the Actions tab any time, for example right after opening the Oura app; re-runs are harmless. The pull requests one day past today, because Oura's sleep endpoint excludes the `end_date` day while its daily endpoints include it — without that, last night could not appear before 8pm Eastern. |
 | **Backfill history** | One-off. Pulls your entire history (default from 2019-01-01). Run this once. |
 | **Anomaly report** | Builds a review queue of suspicious nights into [`docs/review/anomalies.md`](docs/review/anomalies.md), with surrounding nights for context. |
 | **Exclude a day** | Removes bad nights from every metric. Accepts several comma-separated dates. Set `action: include` to restore them. |

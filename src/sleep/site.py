@@ -122,13 +122,13 @@ JSON_BUDGET_KB = 300
 
 # Mirrors the cron hour in .github/workflows/daily.yml; a test ties the two
 # together. Shipped as a UTC hour rather than prose because the reader is in
-# Eastern and the browser can localise it: a hardcoded "10am Eastern" would be
-# wrong for the winter months, when the fixed UTC hour lands on 9am.
+# Eastern and the browser can localise it: a hardcoded "8am Eastern" would be
+# wrong for the winter months, when the fixed UTC hour lands on 7am.
 #
 # The cron's :23 minute is deliberately not surfaced. Naming a precise minute
 # implies an accuracy the queue does not have — runs have landed anywhere from
 # 2.7 to 9.8 hours after the trigger — so the site says "around" instead.
-SCHEDULE_UTC_HOURS = [14, 19, 23, 3]
+SCHEDULE_UTC_HOURS = [12]
 SCHEDULE_NOTE = ("scheduled daily around " +
                  " and ".join(f"{h:02d}:00" for h in SCHEDULE_UTC_HOURS) + " UTC")
 

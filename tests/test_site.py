@@ -299,29 +299,24 @@ def test_schedule_hours_travel_in_the_payload():
         assert f"{h:02d}:00" in fresh["schedule"]
 
 
-def test_runs_are_spread_across_the_eastern_day():
-    """Four attempts, morning to late evening, in both DST states.
+def test_one_morning_run_in_both_dst_states():
+    """A single scheduled attempt, early enough to be a morning run in summer
+    and winter alike.
 
-    Four rather than one because a single attempt has three ways to miss and
-    hit all of them: GitHub skipped 2026-09-09 entirely, its queue adds hours,
-    and the ring only uploads to Oura when the app is opened. The guard is
-    coverage — a morning attempt and a late-evening one, with no long dead
-    stretch between — not the exact hours, which drift with DST.
+    Four spread attempts were tried for a month and dropped: the owner opens
+    the Oura app and runs the workflow by hand straight after, so the extra
+    attempts only re-fetched what was already in. The guard is that the one
+    attempt stays a morning one either side of the DST change, not the exact
+    hour, which drifts.
     """
     import datetime as dt
     from zoneinfo import ZoneInfo
     eastern = ZoneInfo("America/New_York")
-    assert len(site.SCHEDULE_UTC_HOURS) == 4, "four scheduled attempts a day"
+    assert len(site.SCHEDULE_UTC_HOURS) == 1, "one scheduled attempt a day"
     for month, label in ((7, "EDT"), (1, "EST")):
-        local = sorted(
-            dt.datetime(2026, month, 15, h, tzinfo=dt.timezone.utc)
-            .astimezone(eastern).hour
-            for h in site.SCHEDULE_UTC_HOURS
-        )
-        assert 9 <= local[0] <= 11, f"{label}: first attempt at {local[0]}:00"
-        assert local[-1] >= 22, f"{label}: last attempt at {local[-1]}:00"
-        gaps = [b - a for a, b in zip(local, local[1:])]
-        assert max(gaps) <= 5, f"{label}: {max(gaps)}h dead stretch in {local}"
+        local = (dt.datetime(2026, month, 15, site.SCHEDULE_UTC_HOURS[0],
+                             tzinfo=dt.timezone.utc).astimezone(eastern).hour)
+        assert 7 <= local <= 8, f"{label}: attempt at {local}:00"
 
 
 # --- review round: one nights count, honest strip units, bedtime target -------

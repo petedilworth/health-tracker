@@ -377,3 +377,12 @@ def test_app_js_owns_range_and_pinch():
     # Aggregated views open on a year, annual on everything.
     assert "weekly: 365" in js and "quarterly: 365" in js and "annual: null" in js
     assert "touch-action: pan-y" in (ASSETS / "site.css").read_text()
+
+
+def test_overview_carries_the_bedtime_game():
+    ov = site.overview_payload(DAILY, SUMMARY)
+    game = ov["bedtime"]
+    assert [r["line"] for r in game["ladder"]["rungs"]] == [23.0, 22.75, 22.5, 22.25]
+    assert len(game["bests"]) == 3
+    assert game["line"]["floor"] == 22.25
+    assert 'id="game"' in site._overview_page()

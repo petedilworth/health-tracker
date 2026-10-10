@@ -197,6 +197,41 @@ h2 { font-size: 15px; }
   .cardlet .big { font-size: 22px; }
 }
 
+/* The bedtime game: ladder, moving line, personal bests */
+.game3 { display: grid; gap: 12px; grid-template-columns: 1fr; margin-top: 10px; }
+@media (min-width: 900px) { .game3 { grid-template-columns: 1fr 1fr 1fr; } }
+.panel { background: var(--surface-2); border: 1px solid var(--grid);
+         border-radius: 8px; padding: 10px 12px; }
+.panel h3 { font-size: 12px; color: var(--muted); text-transform: uppercase;
+            letter-spacing: .05em; margin: 0 0 4px; }
+.panel .sub { margin: 0 0 8px; }
+.rung { display: grid; grid-template-columns: 82px 1fr 28px auto; gap: 8px;
+        align-items: center; font-size: 13px; padding: 5px 0;
+        border-top: 1px solid var(--grid); }
+.rung .rl { color: var(--ink-2); white-space: nowrap; }
+.rung .rbar { height: 8px; background: var(--page); border-radius: 4px; overflow: hidden; }
+.rung .rbar i { display: block; height: 100%; background: var(--blue); }
+.rung .rn { color: var(--ink); font-weight: 700; text-align: right;
+            font-variant-numeric: tabular-nums; }
+.rung .rb { color: var(--muted); font-size: 11.5px; white-space: nowrap; }
+.rung.target .rl { color: var(--ink); font-weight: 650; }
+.rung.target .rbar i { background: var(--aqua); }
+.lineclock { font-size: 24px; font-weight: 700; color: var(--ink); line-height: 1.15; }
+.linesub { color: var(--ink-2); font-size: 13px; margin: 4px 0 6px; }
+.wkdots { display: flex; gap: 6px; margin: 6px 0 8px; flex-wrap: wrap; }
+.wkdots span { width: 26px; height: 26px; border-radius: 50%; display: inline-flex;
+               align-items: center; justify-content: center; font-size: 11px;
+               font-weight: 700; background: var(--page); color: var(--muted);
+               border: 1px solid var(--grid); font-variant-numeric: tabular-nums; }
+.wkdots span.ok { background: #0e2119; color: var(--aqua); border-color: var(--aqua); }
+.wkdots span.now { border-style: dashed; color: var(--ink-2); }
+.bestrow { display: flex; justify-content: space-between; align-items: center;
+           gap: 8px; font-size: 13px; padding: 6px 0; border-top: 1px solid var(--grid); }
+.bestrow .bl { color: var(--ink-2); }
+.bestrow .bm { color: var(--muted); font-size: 11.5px; }
+.bestrow .bv { color: var(--ink); font-weight: 700; white-space: nowrap;
+               font-variant-numeric: tabular-nums; }
+
 /* Overview card trio table */
 .trio { width: 100%; border-collapse: collapse; margin-top: 8px;
         font-variant-numeric: tabular-nums; font-size: 12px; }

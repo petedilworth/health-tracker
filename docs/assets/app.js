@@ -574,6 +574,86 @@
     }).catch(function (err) { showLoadError("stats", err); });
   }
 
+  // --- the bedtime game -----------------------------------------------------
+  function niceMonth(iso) {
+    if (!iso) return "";
+    var d = new Date(iso + "T00:00:00");
+    return d.toLocaleDateString(undefined, { month: "short", year: "numeric" });
+  }
+  function nights(n) { return n + (n === 1 ? " night" : " nights"); }
+
+  function gameHTML(g) {
+    if (!g || !g.ladder || !g.line) return "";
+    var lad = g.ladder, ln = g.line, target = ln.floor;
+
+    // 1. The ladder: nights in the last 30 in bed by each line.
+    var rungs = lad.rungs.map(function (r) {
+      var pct = lad.nights ? Math.round(r.count / lad.nights * 100) : 0;
+      var isTarget = Math.abs(r.line - target) < 1e-6;
+      return "<div class='rung" + (isTarget ? " target" : "") + "'>" +
+        "<span class='rl'>by " + fmtClock(r.line) + "</span>" +
+        "<span class='rbar'><i style='width:" + pct + "%'></i></span>" +
+        "<span class='rn'>" + r.count + "</span>" +
+        "<span class='rb'>best " + r.best +
+        (r.best_ended ? " · " + niceMonth(r.best_ended) : "") + "</span></div>";
+    }).join("");
+    var ladder = "<div class='panel'><h3>Last " + lad.window + " nights</h3>" +
+      "<p class='sub'>Nights in bed by each line, of " + lad.nights + " recorded. " +
+      "The bottom line is the target; the others are rungs on the way down.</p>" +
+      rungs + "</div>";
+
+    // 2. The line that earns its way earlier.
+    var wk = ln.week, status;
+    if (!wk && !ln.weeks.length) {
+      var d0 = new Date(ln.started + "T00:00:00");
+      d0.setDate(d0.getDate() + ln.week_nights - 1);
+      status = "Starts tonight. Week 1 runs to " + niceDate(d0.toISOString().slice(0, 10)) + ".";
+    } else if (!wk) {
+      status = "A new week starts tonight.";
+    } else if (wk.hits >= ln.week_hits) {
+      status = "Week " + wk.n + ": made it, " + wk.hits + " of " + wk.nights + " so far.";
+    } else if (wk.misses_left === 0) {
+      status = "Week " + wk.n + ": " + wk.hits + " of " + wk.nights +
+        " so far. Out of reach this week; the next one starts " + niceDate(wk.ends) + ".";
+    } else {
+      status = "Week " + wk.n + ": " + wk.hits + " of " + wk.nights + " so far · " +
+        wk.misses_left + (wk.misses_left === 1 ? " miss" : " misses") + " left.";
+    }
+    var dots = ln.weeks.map(function (w) {
+      return "<span class='" + (w.ok ? "ok" : "") + "' title='week " + w.n + ", by " +
+        fmtClock(w.line) + "'>" + w.hits + "</span>";
+    }).join("") + (wk ? "<span class='now' title='this week'>" + wk.hits + "</span>" : "");
+    var rule = ln.next == null
+      ? "The line is at your target. Hold it."
+      : "Hit it " + ln.week_hits + " nights of " + ln.week_nights + ", " + ln.weeks_to_move +
+        " weeks in a row, and it moves to " + fmtClock(ln.next) + " · " + ln.banked +
+        " of " + ln.weeks_to_move + " banked.";
+    var moved = ln.moves.length
+      ? "<p class='sub'>Moved earlier on " + ln.moves.map(function (m) {
+          return niceDate(m.day); }).join(", ") + ".</p>" : "";
+    var line = "<div class='panel'><h3>The line</h3>" +
+      "<div class='lineclock'>in bed by " + fmtClock(ln.line) + "</div>" +
+      "<p class='linesub'>" + status + "</p>" +
+      (dots ? "<div class='wkdots'>" + dots + "</div>" : "") +
+      "<p class='sub'>" + rule + "</p>" + moved + "</div>";
+
+    // 3. Personal bests.
+    var rows = (g.bests || []).map(function (b) {
+      var what = b.kind === "hours" ? b.label + " " + b.line + "h" : b.label + " " + fmtClock(b.line);
+      return "<div class='bestrow'><span class='bl'>" + what +
+        "<br><span class='bm'>" + (b.best_ended ? niceMonth(b.best_ended) : "no run yet") +
+        " · now " + b.current + "</span></span>" +
+        "<span class='bv'>" + nights(b.best) + "</span></div>";
+    }).join("");
+    var bests = "<div class='panel'><h3>Personal bests</h3>" +
+      "<p class='sub'>Longest runs in a row. Beat one.</p>" + rows + "</div>";
+
+    return "<h2>Earlier to bed</h2>" +
+      "<p class='sub'>All nights count, weekends included. In bed means the ring's " +
+      "bedtime, in local time.</p>" +
+      "<div class='game3'>" + ladder + line + bests + "</div>";
+  }
+
   // --- overview -------------------------------------------------------------
   function initOverview() {
     fetchJSON(P.root + "/data/overview.json").then(function (ov) {
@@ -616,6 +696,8 @@
           row("30-day", c.avg30, c.pct30) +
           "</table></a>";
       }).join("");
+      var game = el("game"), gameMarkup = gameHTML(ov.bedtime);
+      if (game && gameMarkup) { game.innerHTML = gameMarkup; game.hidden = false; }
       // The chart is the metric being optimised, which is also the lead card.
       return fetchJSON(P.root + "/data/m/opportunity-debt-h.json");
     }).then(function (payload) {

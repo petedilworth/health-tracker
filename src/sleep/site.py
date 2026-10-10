@@ -20,7 +20,7 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
-from . import config, metrics, score
+from . import bedtime, config, metrics, score
 from .schema import (
     CONFIDENCE_RATIONALE, LOW, SCORE_COMPONENTS, TOTAL_SCORE_WEIGHT,
     TRACKED_METRICS, Metric,
@@ -678,6 +678,7 @@ def overview_payload(daily: pd.DataFrame, summary: dict) -> dict:
         },
         "nights": summary.get("nights_slept"),
         "range": summary.get("date_range"),
+        "bedtime": bedtime.payload(daily),
     }
 
 
@@ -772,6 +773,7 @@ def _overview_page() -> str:
     <p class="sub" id="ov-sub"></p></header>
   <div id="flag"></div>
   <section class="cards" id="cards"></section>
+  <section class="card game" id="game" hidden></section>
   <section class="card">
     <div class="controls"><h2>Sleep opportunity debt</h2>
       <a class="sub" href="metrics/opportunity-debt-h.html">how it's calculated →</a>

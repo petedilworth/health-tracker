@@ -119,6 +119,10 @@ CARD_KEYS = ["opportunity_debt_h", "sleep_score", "sleep_performance_pct",
              "breaths_per_min"]
 
 JSON_BUDGET_KB = 300
+# How far back the per-night detail tables go (overview cards, score component
+# tables). The nightly series itself is full history; these are the heavier
+# extras behind the day picker, capped so the landing page stays light.
+DAY_HISTORY_DAYS = 365
 
 # Mirrors the cron hour in .github/workflows/daily.yml; a test ties the two
 # together. Shipped as a UTC hour rather than prose because the reader is in
@@ -154,8 +158,11 @@ def _latest_row(daily: pd.DataFrame, key: str):
     return None if valid.empty else valid.iloc[-1]
 
 
-def _series_rows(daily: pd.DataFrame, spec: PageSpec) -> list[list]:
-    key = spec.key
+def _series_frame(daily: pd.DataFrame, spec: PageSpec) -> pd.DataFrame:
+    """One row per day from the first valid night: the chart's data and, since
+    the day picker, the stats for any night. Column order is published as
+    meta.series_cols so the browser never relies on positions."""
+    key, hib = spec.key, spec.higher_is_better
     cols = {"v": daily[key], "a7": daily.get(f"{key}_7d"),
             "a30": daily.get(f"{key}_30d")}
     frame = pd.DataFrame({k: c for k, c in cols.items() if c is not None})
@@ -167,11 +174,18 @@ def _series_rows(daily: pd.DataFrame, spec: PageSpec) -> list[list]:
         frame["hi"] = frame["a30"] + std
     if spec.extra_key and spec.extra_key in daily.columns:
         frame["extra"] = daily[spec.extra_key]
+    for name, col in (("pct", f"{key}_pct"), ("pct7", f"{key}_pct_7d"),
+                      ("pct30", f"{key}_pct_30d")):
+        if col in daily.columns:
+            frame[name] = daily[col].map(lambda v: _display_pct(v, hib))
+    if spec.weight and f"c_{key}" in daily.columns:
+        frame["comp"] = daily[f"c_{key}"]
 
     first = frame["v"].first_valid_index()
-    if first is None:
-        return []
-    frame = frame.loc[first:]
+    return frame.iloc[0:0] if first is None else frame.loc[first:]
+
+
+def _series_rows(frame: pd.DataFrame) -> list[list]:
     rows = []
     for day, row in frame.iterrows():
         rows.append([day.strftime("%Y-%m-%d")] +
@@ -188,26 +202,27 @@ def _agg_payload(daily: pd.DataFrame, key: str) -> dict:
     return out
 
 
-def _stats_payload(daily: pd.DataFrame, spec: PageSpec) -> dict:
+def _stats_for_row(row, spec: PageSpec) -> dict:
     key, hib = spec.key, spec.higher_is_better
-    last = _latest_row(daily, key)
-    if last is None:
-        return {}
     # Derived series (debt, need, SRI) are defined on nights with no recording,
     # so their newest value can sit a day later than every measured metric. That
     # is by design, but an unlabelled "Last night · 8 Sep" implies a measurement
     # happened, which is what made the pages look inconsistent with each other.
-    carried = bool(pd.isna(last.get("total_sleep_h")))
     return {
-        "day": last.name.strftime("%Y-%m-%d"),
-        "carried": carried,
-        "value": _round(last[key]),
-        "avg7": _round(last.get(f"{key}_7d")),
-        "avg30": _round(last.get(f"{key}_30d")),
-        "pct": _display_pct(last.get(f"{key}_pct"), hib),
-        "pct7": _display_pct(last.get(f"{key}_pct_7d"), hib),
-        "pct30": _display_pct(last.get(f"{key}_pct_30d"), hib),
+        "day": row.name.strftime("%Y-%m-%d"),
+        "carried": bool(pd.isna(row.get("total_sleep_h"))),
+        "value": _round(row.get(key)),
+        "avg7": _round(row.get(f"{key}_7d")),
+        "avg30": _round(row.get(f"{key}_30d")),
+        "pct": _display_pct(row.get(f"{key}_pct"), hib),
+        "pct7": _display_pct(row.get(f"{key}_pct_7d"), hib),
+        "pct30": _display_pct(row.get(f"{key}_pct_30d"), hib),
     }
+
+
+def _stats_payload(daily: pd.DataFrame, spec: PageSpec) -> dict:
+    last = _latest_row(daily, spec.key)
+    return {} if last is None else _stats_for_row(last, spec)
 
 
 def _freshness(summary: dict) -> dict:
@@ -228,26 +243,35 @@ def _freshness(summary: dict) -> dict:
     }
 
 
+def _unslept_days(daily: pd.DataFrame) -> pd.DatetimeIndex:
+    if "total_sleep_h" not in daily.columns:
+        return pd.DatetimeIndex([])
+    return daily.index[daily["total_sleep_h"].isna()]
+
+
+def _is_carried_series(daily: pd.DataFrame, key: str) -> bool:
+    """Debt, need and SRI hold a value on days with no sleep recorded, so their
+    n counts calendar days; a measured metric's n counts nights. Saying
+    "2,795 nights" for a series that includes 300 unrecorded days was wrong.
+    Decided by whether the series covers MOST unslept days, not any: a
+    clamped duration leaves the odd night with HRV and no sleep, and that
+    one stray must not relabel a measured metric."""
+    s = daily[key].dropna()
+    unslept = _unslept_days(daily)
+    if s.empty or not len(unslept):
+        return False
+    return bool(s.index.isin(unslept).sum() > 0.5 * len(unslept))
+
+
 def _dist_payload(daily: pd.DataFrame, key: str) -> dict:
-    """Where does the latest value sit in the whole distribution?"""
+    """Where does a value sit in the whole distribution?"""
     s = daily[key].dropna()
     if s.empty:
         return {}
-    # Debt, need and SRI hold a value on days with no sleep recorded, so their
-    # n counts calendar days; a measured metric's n counts nights. Saying
-    # "2,795 nights" for a series that includes 300 unrecorded days was wrong.
-    # Decided by whether the series covers MOST unslept days, not any: a
-    # clamped duration leaves the odd night with HRV and no sleep, and that
-    # one stray must not relabel a measured metric.
-    carried = False
-    if "total_sleep_h" in daily.columns:
-        unslept = daily.index[daily["total_sleep_h"].isna()]
-        if len(unslept):
-            carried = s.index.isin(unslept).sum() > 0.5 * len(unslept)
     return {"min": _round(s.min()), "p25": _round(s.quantile(.25)),
             "p50": _round(s.median()), "p75": _round(s.quantile(.75)),
             "max": _round(s.max()), "n": int(len(s)),
-            "unit": "days" if carried else "nights"}
+            "unit": "days" if _is_carried_series(daily, key) else "nights"}
 
 
 def _top_bottom_payload(daily: pd.DataFrame, spec: PageSpec) -> dict:
@@ -376,7 +400,7 @@ def _explain_opportunity(daily: pd.DataFrame, last, key: str) -> dict:
     weight = 1.0 / (1.0 - decay)          # nights the accumulator spans
     debt = last.get("opportunity_debt_h")
     per_night = (debt / weight * 60.0) if debt is not None and not pd.isna(debt) else None
-    streak, best_streak, last_year = _target_streaks(daily)
+    streak, best_streak, last_year = _target_streaks(daily.loc[:last.name])
     yield_min = score.opportunity_yield(daily)
     need = last.get("sleep_need_h")
     eff = float(daily["efficiency"].median()) / 100.0
@@ -615,20 +639,36 @@ EXPLAINERS = {
 
 
 def _explain(daily: pd.DataFrame, spec: PageSpec) -> dict | None:
-    """Explanation text + latest component values for derived metrics."""
+    """Explanation text + component values for derived metrics.
+
+    The prose and the headline table come from the latest night. `days` holds
+    the same table for every night in the last DAY_HISTORY_DAYS, as
+    [value, score] pairs aligned with `components`, so the day picker can show
+    how an old night was made up without a second fetch.
+    """
     fn = EXPLAINERS.get(spec.key)
     if fn is None:
         return None
     last = _latest_row(daily, spec.key)
     if last is None:
         return None
-    return fn(daily, last, spec.key)
+    out = fn(daily, last, spec.key)
+    recent = daily.loc[:last.name].tail(DAY_HISTORY_DAYS)
+    days = {}
+    for day, row in recent[recent[spec.key].notna()].iterrows():
+        comps = fn(daily, row, spec.key)["components"]
+        days[day.strftime("%Y-%m-%d")] = [
+            [c.get("value"), _round(c.get("score"), 0) if "score" in c else None]
+            for c in comps]
+    out["days"] = days
+    return out
 
 
 # --- payload + page emission -------------------------------------------------
 
 def metric_payload(daily: pd.DataFrame, spec: PageSpec,
                    summary: dict | None = None) -> dict:
+    frame = _series_frame(daily, spec)
     payload = {
         "fresh": _freshness(summary or {}),
         "meta": {
@@ -641,12 +681,19 @@ def metric_payload(daily: pd.DataFrame, spec: PageSpec,
             "extra_label": spec.extra_label,
             "has_band": spec.confidence == LOW,
         },
-        "series": _series_rows(daily, spec),
+        "series": _series_rows(frame),
         "agg": _agg_payload(daily, spec.key),
         "stats": _stats_payload(daily, spec),
         "dist": _dist_payload(daily, spec.key),
         "top_bottom": _top_bottom_payload(daily, spec),
     }
+    payload["meta"]["series_cols"] = ["day"] + list(frame.columns)
+    if _is_carried_series(daily, spec.key):
+        # Which days the value is held over from the night before, so the
+        # stats block can say so for any day, not only the latest.
+        unslept = _unslept_days(daily)
+        payload["carried_days"] = [d.strftime("%Y-%m-%d") for d in frame.index
+                                   if d in unslept]
     if spec.weight:
         c = daily.get(f"c_{spec.key}")
         latest_c = c.dropna().iloc[-1] if c is not None and c.notna().any() else None
@@ -656,6 +703,26 @@ def metric_payload(daily: pd.DataFrame, spec: PageSpec,
     if explain:
         payload["explain"] = explain
     return payload
+
+
+def _overview_days(daily: pd.DataFrame) -> dict:
+    """The cards for each of the last DAY_HISTORY_DAYS nights, compact:
+    [day, flag_raised, flag_detail, [v, a7, a30, pct, pct7, pct30] per key]."""
+    specs = [PAGE_BY_KEY[k] for k in CARD_KEYS]
+    rows = []
+    for day, row in daily.tail(DAY_HISTORY_DAYS).iterrows():
+        if all(pd.isna(row.get(k)) for k in CARD_KEYS):
+            continue
+        cells = []
+        for spec in specs:
+            st = _stats_for_row(row, spec)
+            cells.append([st["value"], st["avg7"], st["avg30"],
+                          st["pct"], st["pct7"], st["pct30"]])
+        rows.append([day.strftime("%Y-%m-%d"),
+                     int(bool(row.get("flag_raised")) if pd.notna(row.get("flag_raised")) else 0),
+                     (row.get("flag_detail") or "") if pd.notna(row.get("flag_detail")) else "",
+                     *cells])
+    return {"keys": CARD_KEYS, "rows": rows}
 
 
 def overview_payload(daily: pd.DataFrame, summary: dict) -> dict:
@@ -679,6 +746,7 @@ def overview_payload(daily: pd.DataFrame, summary: dict) -> dict:
         "nights": summary.get("nights_slept"),
         "range": summary.get("date_range"),
         "bedtime": bedtime.payload(daily),
+        "days": _overview_days(daily),
     }
 
 
@@ -734,6 +802,7 @@ def _metric_page(spec: PageSpec) -> str:
   <header class="pagehead">
     <h1>{spec.label} {_badge(spec)}</h1>
     {weight_line}{low_note}
+    <div class="daynav" id="daynav"></div>
   </header>
   <section class="stats" id="stats"></section>
   <section class="card dist" id="dist"></section>
@@ -770,7 +839,8 @@ def _overview_page() -> str:
     body = """
 <main class="wrap">
   <header class="pagehead"><h1 id="ov-title">Sleep Analytics</h1>
-    <p class="sub" id="ov-sub"></p></header>
+    <p class="sub" id="ov-sub"></p>
+    <div class="daynav" id="daynav"></div></header>
   <div id="flag"></div>
   <section class="cards" id="cards"></section>
   <section class="card game" id="game" hidden></section>

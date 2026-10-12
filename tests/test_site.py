@@ -71,18 +71,86 @@ def test_stats_payload_uses_display_direction():
 # --- payload structure --------------------------------------------------------
 
 def test_band_columns_only_for_low_confidence():
-    low_rows = site._series_rows(DAILY, _spec("deep_h"))     # LOW tier
-    high_rows = site._series_rows(DAILY, _spec("hrv"))       # HIGH tier
+    low = site.metric_payload(DAILY, _spec("deep_h"))      # LOW tier
+    high = site.metric_payload(DAILY, _spec("hrv"))        # HIGH tier
     assert _spec("deep_h").confidence == LOW
-    assert len(low_rows[0]) == 6      # date, v, a7, a30, lo, hi
-    assert len(high_rows[0]) == 4     # date, v, a7, a30
+    assert {"lo", "hi"} <= set(low["meta"]["series_cols"])
+    assert not {"lo", "hi"} & set(high["meta"]["series_cols"])
+    # Positions are published, never assumed.
+    for p in (low, high):
+        assert len(p["series"][0]) == len(p["meta"]["series_cols"])
+        assert p["meta"]["series_cols"][:4] == ["day", "v", "a7", "a30"]
 
 
 def test_series_trimmed_to_first_valid():
     d = DAILY.copy()
     d.loc[d.index[:100], "steps"] = np.nan       # simulate a late-starting metric
-    rows = site._series_rows(d, _spec("steps"))
+    rows = site._series_rows(site._series_frame(d, _spec("steps")))
     assert rows[0][0] == d.index[100].strftime("%Y-%m-%d")
+
+
+# --- day navigation: every night reachable, not only the latest ---------------
+
+def test_series_carries_percentiles_and_component_scores():
+    hrv = site.metric_payload(DAILY, _spec("hrv"))
+    cols = hrv["meta"]["series_cols"]
+    assert {"pct", "pct7", "pct30", "comp"} <= set(cols)      # hrv is weighted
+    last = dict(zip(cols, hrv["series"][-1]))
+    assert last["pct"] == hrv["stats"]["pct"]
+    assert last["a30"] == hrv["stats"]["avg30"]
+    steps = site.metric_payload(DAILY, _spec("steps"))          # tracked only
+    assert "comp" not in steps["meta"]["series_cols"]
+
+
+def test_carried_days_only_for_series_that_hold_a_value():
+    # The synthetic frame has no gaps, so make some: ten unworn nights, on
+    # which debt still holds a value and HRV does not.
+    d = DAILY.copy()
+    gaps = d.index[50:60]
+    d.loc[gaps, ["total_sleep_h", "hrv"]] = np.nan
+    debt = site.metric_payload(d, _spec("sleep_debt_h"))
+    hrv = site.metric_payload(d, _spec("hrv"))
+    assert "carried_days" in debt and "carried_days" not in hrv
+    assert debt["carried_days"] == list(gaps.strftime("%Y-%m-%d"))
+
+
+def test_explain_days_align_with_components_and_are_capped():
+    p = site.metric_payload(DAILY, _spec("sleep_score"))
+    ex = p["explain"]
+    assert 0 < len(ex["days"]) <= site.DAY_HISTORY_DAYS
+    latest_day = p["stats"]["day"]
+    assert latest_day in ex["days"]
+    row = ex["days"][latest_day]
+    assert len(row) == len(ex["components"])
+    assert [c["value"] for c in ex["components"]] == [v for v, _ in row]
+    assert [c.get("score") for c in ex["components"]] == [sc for _, sc in row]
+
+
+def test_overview_days_table_shape():
+    ov = site.overview_payload(DAILY, SUMMARY)
+    days = ov["days"]
+    assert days["keys"] == site.CARD_KEYS
+    assert 0 < len(days["rows"]) <= site.DAY_HISTORY_DAYS
+    for row in days["rows"]:
+        assert len(row) == 3 + len(site.CARD_KEYS)
+        assert row[1] in (0, 1)
+        assert all(len(cell) == 6 for cell in row[3:])
+    # The newest row is the cards themselves.
+    newest = days["rows"][-1]
+    i = site.CARD_KEYS.index("sleep_score")
+    card = next(c for c in ov["cards"] if c["slug"] == "sleep-score")
+    assert newest[3 + i][0] == card["value"]
+
+
+def test_target_streaks_respect_the_frame_they_are_given():
+    full = site._target_streaks(DAILY)
+    sliced = site._target_streaks(DAILY.iloc[:200])
+    assert sliced[1] <= full[1] and sliced[2] <= full[2]
+
+
+def test_every_chart_page_carries_the_day_picker():
+    assert 'id="daynav"' in site._metric_page(_spec("bedtime"))
+    assert 'id="daynav"' in site._overview_page()
 
 
 def test_metric_payload_complete():

@@ -47,6 +47,31 @@ h2 { font-size: 15px; }
 .note { color: var(--muted); font-size: 12.5px; border-left: 3px solid var(--grid);
         padding-left: 10px; margin: 8px 0 0; max-width: 640px; }
 
+/* Day picker: arrows, a native date input dressed as text, and a way back
+   to the latest night. Lives under the title on every page that has a night. */
+.daynav { display: flex; align-items: center; gap: 6px; margin-top: 8px;
+          flex-wrap: wrap; }
+.daynav button {
+  appearance: none; border: 1px solid var(--grid); background: var(--surface-2);
+  color: var(--ink-2); font: 600 14px system-ui, sans-serif; line-height: 1;
+  width: 34px; height: 32px; border-radius: 8px; cursor: pointer;
+}
+.daynav button:hover { color: var(--ink); border-color: var(--muted); }
+.daynav button:disabled { opacity: .35; cursor: default; }
+.daynav input[type="date"] {
+  appearance: none; -webkit-appearance: none; color-scheme: dark;
+  background: var(--surface-2); border: 1px solid var(--grid); border-radius: 8px;
+  color: var(--ink); font: 650 14px system-ui, sans-serif; height: 32px;
+  padding: 0 10px; font-variant-numeric: tabular-nums; min-width: 150px;
+}
+.daynav input[type="date"]::-webkit-calendar-picker-indicator { opacity: .6; }
+.daynav .dayname { color: var(--muted); font-size: 12.5px; }
+.daynav .latest { margin-left: 4px; font-size: 12.5px; }
+.daynav .latest.off { visibility: hidden; }
+/* The chart marks the chosen night; everything else re-renders. */
+.stat .lbl .nonight { color: var(--muted); font-size: 10.5px; text-transform: none;
+  letter-spacing: 0; font-style: italic; }
+
 /* Confidence badges */
 .badge {
   display: inline-block; vertical-align: middle;

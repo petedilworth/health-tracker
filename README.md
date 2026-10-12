@@ -163,6 +163,13 @@ metrics (REM, deep, light) render de-emphasised with a ±1 SD band, so the chart
 itself says "directional, not exact". Percentiles always read "better than X%
 of nights" regardless of whether the metric is higher- or lower-is-better.
 
+Every page has a day picker under its title: arrows, a date field, swipe on a
+phone, or a tap on a chart point. The chosen night travels in the URL, so a
+link opens on that night and the overview's cards carry it through to the
+metric pages. The overview covers the last year night by night; metric pages
+reach the whole history. Best/worst lists, the bedtime game and the freshness
+strip always describe now.
+
 `plotly.min.js` is vendored rather than loaded from a CDN, so the site has no
 external dependencies at all. The whole site is `noindex` and excluded via
 robots.txt.

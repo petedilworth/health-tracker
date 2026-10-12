@@ -338,9 +338,24 @@
   // --- metric page ----------------------------------------------------------
   function col(rows, i) { return rows.map(function (r) { return r[i]; }); }
 
+  // Series columns are named in meta.series_cols; nothing here assumes a position.
+  function colIndex(payload) {
+    if (!payload._ci) {
+      var ci = {};
+      (payload.meta.series_cols || ["day", "v", "a7", "a30"]).forEach(function (c, i) { ci[c] = i; });
+      payload._ci = ci;
+    }
+    return payload._ci;
+  }
+  function seriesCol(payload, name) {
+    var i = colIndex(payload)[name];
+    return i == null ? null : col(payload.series, i);
+  }
+
   function dailyTraces(payload) {
     var m = payload.meta, rows = payload.series;
-    var dates = col(rows, 0), v = col(rows, 1), a7 = col(rows, 2), a30 = col(rows, 3);
+    var dates = seriesCol(payload, "day"), v = seriesCol(payload, "v"),
+        a7 = seriesCol(payload, "a7"), a30 = seriesCol(payload, "a30");
     var text = v.map(function (x) { return fmt(m.format, x); });
     var t7 = a7.map(function (x) { return fmt(m.format, x); });
     var t30 = a30.map(function (x) { return fmt(m.format, x); });
@@ -350,7 +365,7 @@
     if (m.has_band) {
       // Plotly fills bridge null gaps even with connectgaps:false, smearing
       // polygons across data holes — so emit one fill pair per contiguous run.
-      var lo = col(rows, 4), hi = col(rows, 5);
+      var lo = seriesCol(payload, "lo"), hi = seriesCol(payload, "hi");
       var runStart = null;
       function pushRun(s, e) {
         if (e - s < 3) return;
@@ -384,8 +399,8 @@
       traces.push({ x: dates, y: a30, name: "30-day", mode: "lines",
                     line: { color: C.orange, width: 1.6, dash: "dot" },
                     customdata: t30, hovertemplate: "30-day %{customdata}<extra></extra>" });
-      if (rows.length && rows[0].length > 4 && m.extra_label) {
-        var ex = col(rows, rows[0].length - 1);
+      var ex = seriesCol(payload, "extra");
+      if (ex && m.extra_label) {
         traces.push({ x: dates, y: ex, name: m.extra_label, mode: "lines",
                       line: { color: C.aqua, width: 1.6 },
                       customdata: ex.map(function (x) { return fmt(m.format, x); }),
@@ -418,9 +433,31 @@
     var r = defaultRange(built.dates, days);
     if (r) layout.xaxis.range = r; else layout.xaxis.autorange = true;
     if (window.innerWidth < 640) layout.margin.l = 48;
+    if (view === "daily" && chartEl._day) layout.shapes = [dayShape(chartEl._day)];
     chartEl.dataset.view = view;
     Plotly.react(chartEl, built.traces, layout, CONFIG);
     enablePinch(chartEl);
+  }
+
+  // A dotted vertical through the chosen night. Only on the daily view: a
+  // single night means nothing on a quarterly chart.
+  function dayShape(iso) {
+    return { type: "line", xref: "x", yref: "paper", x0: iso, x1: iso, y0: 0, y1: 1,
+             line: { color: C.orange, width: 1.5, dash: "dot" } };
+  }
+  function markDay(gd, iso, isLatest) {
+    gd._day = isLatest ? null : iso;
+    if (!gd._fullLayout || gd.dataset.view !== "daily") return;
+    var update = { shapes: gd._day ? [dayShape(gd._day)] : [] };
+    var ax = gd._fullLayout.xaxis, t = Date.parse(iso + "T00:00:00Z");
+    if (ax && ax.range && gd._day) {
+      var a = Date.parse(ax.range[0]), b = Date.parse(ax.range[1]);
+      if (t < a || t > b) {                     // bring it into view, same span
+        var half = (b - a) / 2;
+        update["xaxis.range"] = [new Date(t - half).toISOString(), new Date(t + half).toISOString()];
+      }
+    }
+    Plotly.relayout(gd, update);
   }
 
   // The range buttons live beside the view toggle and change with it: "4m"
@@ -440,26 +477,42 @@
     });
   }
 
-  function statsHTML(payload) {
-    var m = payload.meta, s = payload.stats || {}, d = payload.dist || {};
+  // The stats for any night, from the series row. `missing` is a night the ring
+  // has nothing for; `carried` is a derived value held over from the night before.
+  function nightStats(payload, iso) {
+    if (!payload._byDay) {
+      payload._byDay = {};
+      payload.series.forEach(function (r) { payload._byDay[r[0]] = r; });
+    }
+    var r = payload._byDay[iso], ci = colIndex(payload);
+    function g(c) { return r && ci[c] != null ? r[ci[c]] : null; }
+    return { day: iso, value: g("v"), avg7: g("a7"), avg30: g("a30"),
+             pct: g("pct"), pct7: g("pct7"), pct30: g("pct30"), comp: g("comp"),
+             carried: (payload.carried_days || []).indexOf(iso) >= 0,
+             missing: g("v") == null };
+  }
+
+  function statsHTML(payload, s, isLatest) {
+    var m = payload.meta, d = payload.dist || {};
     function block(lbl, val, pct, extra) {
       var pctLine = pct == null ? "" : '<div class="pct"><b>' + ordinal(pct) + "</b></div>";
       return '<div class="stat"><div class="lbl">' + lbl + '</div>' +
              '<div class="val">' + fmt(m.format, val) + "</div>" + pctLine +
              (extra ? '<div class="pct">' + extra + "</div>" : "") + "</div>";
     }
-    var dayLbl = "Last night · " + (s.day || "");
-    if (s.carried) dayLbl += '<span class="carried"><br>carried forward, ' +
+    var dayLbl = (isLatest ? "Last night · " : "Night of ") + niceDate(s.day);
+    if (s.missing) dayLbl += '<span class="nonight"><br>no night recorded</span>';
+    else if (s.carried) dayLbl += '<span class="carried"><br>carried forward, ' +
       "no sleep recorded that night</span>";
     return block(dayLbl, s.value, s.pct,
-                 vsMedian(m.format, s.value, d.p50)) +
+                 s.missing ? "" : vsMedian(m.format, s.value, d.p50)) +
            block("7-day avg", s.avg7, s.pct7) +
            block("30-day avg", s.avg30, s.pct30);
   }
 
   // Range strip: min · [p25 ▮ p75] · max, with median tick and latest marker.
-  function distHTML(payload) {
-    var m = payload.meta, d = payload.dist, s = payload.stats || {};
+  function distHTML(payload, s, isLatest) {
+    var m = payload.meta, d = payload.dist;
     if (!d || d.min == null) return "";
     var W = 600, H = 44, padL = 8, padR = 8;
     var span = (d.max - d.min) || 1;
@@ -478,23 +531,29 @@
       '<span>median ' + fmt(m.format, d.p50) + '</span>' +
       '<span>p75 ' + fmt(m.format, d.p75) + '</span>' +
       '<span>max ' + fmt(m.format, d.max) + '</span></div>';
-    return '<div class="controls"><h2>Where last night sits</h2>' +
+    return '<div class="controls"><h2>Where ' + (isLatest ? "last night" : "this night") + ' sits</h2>' +
       '<span class="sub">' + d.n.toLocaleString() + " " + (d.unit || "nights") +
       ' · shaded box is the middle 50%</span></div>' +
       svg + labels;
   }
 
-  function explainHTML(payload) {
+  function explainHTML(payload, iso, isLatest) {
     var ex = payload.explain;
     if (!ex) return "";
     var isScore = ex.kind === "score";
+    // The component table for the chosen night. Kept for the last year; the
+    // prose is the same for every night.
+    var night = isLatest ? null : (ex.days || {})[iso];
+    var tooOld = !isLatest && !night;
     // Confidence gets its own headed column: a bare "high" beside a bedtime
     // reads as a rating of the value, which is the misread being fixed.
     var head = isScore
-      ? "<tr><th>Component</th><th>Last night</th><th class='num'>Score /100</th>" +
+      ? "<tr><th>Component</th><th>" + (isLatest ? "Last night" : "This night") +
+        "</th><th class='num'>Score /100</th>" +
         "<th class='num'>Weight</th><th>Measurement confidence</th></tr>"
       : "<tr><th>Input</th><th>Value</th></tr>";
-    var rows = ex.components.map(function (c) {
+    var rows = ex.components.map(function (c, i) {
+      if (night) c = Object.assign({}, c, { value: night[i][0], score: night[i][1] });
       var val = fmt(c.format, c.value);
       if (isScore) {
         var conf = c.confidence
@@ -510,10 +569,13 @@
         "</td><td class='num'>" + val + "</td></tr>";
     }).join("");
     var paras = Array.isArray(ex.text) ? ex.text : [ex.text];
+    var table = tooOld
+      ? "<p class='sub'>The night-by-night breakdown is kept for the last year; " +
+        niceDate(iso) + " is older than that, so the table is not shown.</p>"
+      : "<div class='scroll-x'><table class='comps'>" + head + rows + "</table></div>";
     return "<h2>How it's calculated</h2>" +
       paras.map(function (p) { return "<p>" + p + "</p>"; }).join("") +
-      "<p class='formula'>" + ex.formula + "</p>" +
-      "<div class='scroll-x'><table class='comps'>" + head + rows + "</table></div>";
+      "<p class='formula'>" + ex.formula + "</p>" + table;
   }
 
   function tbHTML(payload, period) {
@@ -528,6 +590,105 @@
            "<div><h3>Worst 10</h3>" + table(tb.bottom, "worst") + "</div>";
   }
 
+  // --- day navigation -------------------------------------------------------
+  // The night in view travels in the URL hash (#2026-10-05), so a link opens on
+  // that night and the overview's cards hand it on to the metric pages. No hash
+  // means the latest night, so a bookmark of the plain URL stays "latest".
+  function hashDay() {
+    var m = /(\d{4}-\d{2}-\d{2})/.exec(location.hash || "");
+    return m ? m[1] : null;
+  }
+  function shiftDay(iso, n) {
+    var d = new Date(iso + "T00:00:00Z");
+    d.setUTCDate(d.getUTCDate() + n);
+    return d.toISOString().slice(0, 10);
+  }
+  function clampDay(iso, min, max) {
+    if (!iso || iso > max) return max;
+    return iso < min ? min : iso;
+  }
+  function weekday(iso) {
+    return new Date(iso + "T00:00:00").toLocaleDateString(undefined, { weekday: "long" });
+  }
+  function carryHash(iso, isLatest) {
+    document.querySelectorAll(".nav a, a.cardlet").forEach(function (a) {
+      a.href = a.href.split("#")[0] + (isLatest ? "" : "#" + iso);
+    });
+  }
+
+  // Builds the picker into `container` and calls onChange(iso, isLatest) now and
+  // on every change: arrows, the date field, left/right keys, the hash, and
+  // (via .swipe) a horizontal swipe on a section.
+  function daynav(container, min, max, onChange) {
+    if (!container || !min || !max) return null;
+    var day = clampDay(hashDay(), min, max);
+    container.innerHTML =
+      '<button type="button" data-step="-1" aria-label="previous night">&#8249;</button>' +
+      '<input type="date" min="' + min + '" max="' + max + '" aria-label="night">' +
+      '<button type="button" data-step="1" aria-label="next night">&#8250;</button>' +
+      '<span class="dayname"></span>' +
+      '<a href="#" class="latest">back to last night</a>';
+    var input = container.querySelector("input"), name = container.querySelector(".dayname"),
+        latest = container.querySelector(".latest"),
+        prev = container.querySelector('[data-step="-1"]'), next = container.querySelector('[data-step="1"]');
+    function paint() {
+      input.value = day;
+      name.textContent = weekday(day) + (day === max ? " · last night" : " night");
+      latest.classList.toggle("off", day === max);
+      prev.disabled = day <= min; next.disabled = day >= max;
+    }
+    function fire() {
+      var isLatest = day === max;
+      carryHash(day, isLatest);
+      onChange(day, isLatest);
+    }
+    function go(iso) {
+      iso = clampDay(iso, min, max);
+      if (iso === day) return;
+      day = iso; paint();
+      var h = day === max ? "" : "#" + day;
+      // replaceState rather than location.hash: a page should not scroll to an
+      // anchor it does not have, and arrowing through a month is one history entry.
+      history.replaceState(null, "", location.pathname + location.search + h);
+      fire();
+    }
+    container.addEventListener("click", function (e) {
+      var b = e.target.closest("button");
+      if (b && !b.disabled) go(shiftDay(day, Number(b.dataset.step)));
+      if (e.target.closest(".latest")) { e.preventDefault(); go(max); }
+    });
+    input.addEventListener("change", function () { if (input.value) go(input.value); });
+    document.addEventListener("keydown", function (e) {
+      if (e.target && /INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) return;
+      if (e.key === "ArrowLeft") go(shiftDay(day, -1));
+      if (e.key === "ArrowRight") go(shiftDay(day, 1));
+    });
+    window.addEventListener("hashchange", function () {
+      var h = clampDay(hashDay(), min, max);
+      if (h !== day) { day = h; paint(); fire(); }
+    });
+    paint(); fire();
+    return {
+      go: go,
+      day: function () { return day; },
+      // Swipe left = forward a night, like paging; a mostly vertical move is a scroll.
+      swipe: function (target) {
+        if (!target) return;
+        var sx = null, sy = 0;
+        target.addEventListener("touchstart", function (e) {
+          if (e.touches.length !== 1) { sx = null; return; }
+          sx = e.touches[0].clientX; sy = e.touches[0].clientY;
+        }, { passive: true });
+        target.addEventListener("touchend", function (e) {
+          if (sx == null) return;
+          var t = e.changedTouches[0], dx = t.clientX - sx, dy = t.clientY - sy;
+          sx = null;
+          if (Math.abs(dx) > 60 && Math.abs(dy) < 40) go(shiftDay(day, dx < 0 ? 1 : -1));
+        }, { passive: true });
+      }
+    };
+  }
+
   function wireSeg(seg, attr, onPick) {
     if (!seg) return;
     seg.addEventListener("click", function (e) {
@@ -539,30 +700,51 @@
     });
   }
 
+  // Everything on a metric page that is about one night, redrawn per night.
+  function renderNight(payload, iso, isLatest) {
+    var s = nightStats(payload, iso);
+    el("stats").innerHTML = statsHTML(payload, s, isLatest);
+    var dist = el("dist");
+    var distMarkup = distHTML(payload, s, isLatest);
+    if (distMarkup) { dist.innerHTML = distMarkup; dist.hidden = false; } else dist.hidden = true;
+    var contrib = el("contrib");
+    if (contrib) {
+      contrib.textContent = s.comp == null ? "" :
+        (isLatest ? "last night" : "this night") + " scored " + Math.round(s.comp) + "/100 on this component";
+    }
+    var exp = el("explain");
+    var expMarkup = explainHTML(payload, iso, isLatest);
+    if (expMarkup) {
+      exp.innerHTML = expMarkup; exp.hidden = false;
+      // Only if the table genuinely overflows: say so, rather than clipping
+      // a column silently.
+      var sx = exp.querySelector(".scroll-x");
+      if (sx && sx.scrollWidth > sx.clientWidth + 2) {
+        sx.insertAdjacentHTML("afterend", "<p class='sub'>Swipe the table sideways for more columns.</p>");
+      }
+    }
+    if (el("chart")._fullLayout) markDay(el("chart"), iso, isLatest);
+  }
+
   function initMetric() {
     fetchJSON(P.root + "/data/m/" + P.slug + ".json").then(function (payload) {
       renderFreshness(payload.fresh);
-      el("stats").innerHTML = statsHTML(payload);
-      var dist = el("dist");
-      var distMarkup = distHTML(payload);
-      if (distMarkup) dist.innerHTML = distMarkup; else dist.hidden = true;
-      var contrib = el("contrib");
-      if (contrib && payload.meta.latest_contribution != null) {
-        contrib.textContent = "last night scored " +
-          payload.meta.latest_contribution.toFixed(0) + "/100 on this component";
-      }
-      var exp = el("explain");
-      var expMarkup = explainHTML(payload);
-      if (expMarkup) {
-        exp.innerHTML = expMarkup; exp.hidden = false;
-        // Only if the table genuinely overflows: say so, rather than clipping
-        // a column silently.
-        var sx = exp.querySelector(".scroll-x");
-        if (sx && sx.scrollWidth > sx.clientWidth + 2) {
-          sx.insertAdjacentHTML("afterend", "<p class='sub'>Swipe the table sideways for more columns.</p>");
-        }
-      }
+      var days = seriesCol(payload, "day") || [];
+      var first = days[0], last = days[days.length - 1];
+      var nav = daynav(el("daynav"), first, last, function (iso, isLatest) {
+        renderNight(payload, iso, isLatest);
+      });
+      if (!nav) renderNight(payload, last, true);
+      else nav.swipe(el("stats"));
       render(el("chart"), payload, "daily");
+      if (nav) {
+        markDay(el("chart"), nav.day(), nav.day() === last);
+        // Tapping a point is the fastest way to a night you can see.
+        el("chart").on("plotly_click", function (e) {
+          var x = e.points && e.points[0] && String(e.points[0].x).slice(0, 10);
+          if (x && el("chart").dataset.view === "daily") nav.go(x);
+        });
+      }
       rangeButtons(el("range-toggle"), "daily");
       wireRange(el("range-toggle"), el("chart"), payload);
       el("tb").innerHTML = tbHTML(payload, "all");
@@ -674,36 +856,71 @@
           " are still missing. Metrics that carry forward already show " +
           niceDate(partial.day) + "; measured ones stop a day earlier.</div>");
       }
-      var flag = el("flag");
-      if (ov.flag && ov.flag.raised) {
-        flag.innerHTML = "<div class='flagbox'><b>Something's off:</b> " +
-          ov.flag.detail + "</div>";
-      } else {
-        flag.innerHTML = "<p class='allclear'>No health flags — temperature and " +
-          "respiratory rate are within their seasonal baselines.</p>";
+      // Cards and the flag for the chosen night. The latest comes from
+      // ov.cards; any other night from the per-night table (last year).
+      var rows = (ov.days && ov.days.rows) || [], byDay = {};
+      rows.forEach(function (r) { byDay[r[0]] = r; });
+      var keys = (ov.days && ov.days.keys) || [];
+      function cardsFor(iso, isLatest) {
+        if (isLatest) return { cards: ov.cards, flag: ov.flag };
+        var r = byDay[iso];
+        return {
+          cards: ov.cards.map(function (c, i) {
+            var cell = r ? r[3 + i] : [];
+            return { slug: c.slug, label: c.label, format: c.format,
+                     value: cell[0], avg7: cell[1], avg30: cell[2],
+                     pct: cell[3], pct7: cell[4], pct30: cell[5] };
+          }),
+          flag: { raised: !!(r && r[1]), detail: r ? r[2] : "" }
+        };
       }
-      el("cards").innerHTML = ov.cards.map(function (c) {
-        function row(lbl, v, p) {
-          return "<tr><td>" + lbl + "</td><td class='num'>" + fmt(c.format, v) +
-            "</td><td class='pctcell'>" + ordinal(p) + "</td></tr>";
+      function showNight(iso, isLatest) {
+        var v = cardsFor(iso, isLatest), flag = el("flag");
+        if (v.flag && v.flag.raised) {
+          flag.innerHTML = "<div class='flagbox'><b>Something's off:</b> " + v.flag.detail + "</div>";
+        } else {
+          flag.innerHTML = "<p class='allclear'>No health flags" +
+            (isLatest ? "" : " that morning") + " — temperature and " +
+            "respiratory rate " + (isLatest ? "are" : "were") + " within their seasonal baselines.</p>";
         }
-        return "<a class='cardlet' href='metrics/" + c.slug + ".html'>" +
-          "<div class='lbl'>" + c.label + "</div>" +
-          "<div class='big'>" + fmt(c.format, c.value) + "</div>" +
-          "<table class='trio'>" +
-          row("Last night", c.value, c.pct) +
-          row("7-day", c.avg7, c.pct7) +
-          row("30-day", c.avg30, c.pct30) +
-          "</table></a>";
-      }).join("");
+        var pb = document.querySelector(".partialbox");
+        if (pb) pb.hidden = !isLatest;
+        el("cards").innerHTML = v.cards.map(function (c) {
+          function row(lbl, val, p) {
+            return "<tr><td>" + lbl + "</td><td class='num'>" + fmt(c.format, val) +
+              "</td><td class='pctcell'>" + ordinal(p) + "</td></tr>";
+          }
+          return "<a class='cardlet' href='metrics/" + c.slug + ".html" +
+            (isLatest ? "" : "#" + iso) + "'>" +
+            "<div class='lbl'>" + c.label + "</div>" +
+            "<div class='big'>" + fmt(c.format, c.value) + "</div>" +
+            "<table class='trio'>" +
+            row(isLatest ? "Last night" : "This night", c.value, c.pct) +
+            row("7-day", c.avg7, c.pct7) +
+            row("30-day", c.avg30, c.pct30) +
+            "</table></a>";
+        }).join("");
+        if (el("chart") && el("chart")._fullLayout) markDay(el("chart"), iso, isLatest);
+      }
+      var latestDay = rows.length ? rows[rows.length - 1][0] : null;
+      var nav = daynav(el("daynav"), rows.length ? rows[0][0] : null, latestDay, showNight);
+      if (!nav) showNight(null, true); else nav.swipe(el("cards"));
+      ov._nav = nav;
       var game = el("game"), gameMarkup = gameHTML(ov.bedtime);
       if (game && gameMarkup) { game.innerHTML = gameMarkup; game.hidden = false; }
       // The chart is the metric being optimised, which is also the lead card.
-      return fetchJSON(P.root + "/data/m/opportunity-debt-h.json");
-    }).then(function (payload) {
-      render(el("chart"), payload, "daily");
-      rangeButtons(el("range-toggle"), "daily");
-      wireRange(el("range-toggle"), el("chart"), payload);
+      return fetchJSON(P.root + "/data/m/opportunity-debt-h.json").then(function (payload) {
+        render(el("chart"), payload, "daily");
+        rangeButtons(el("range-toggle"), "daily");
+        wireRange(el("range-toggle"), el("chart"), payload);
+        if (nav) {
+          markDay(el("chart"), nav.day(), nav.day() === latestDay);
+          el("chart").on("plotly_click", function (e) {
+            var x = e.points && e.points[0] && String(e.points[0].x).slice(0, 10);
+            if (x && el("chart").dataset.view === "daily") nav.go(x);
+          });
+        }
+      });
     }).catch(function (err) { showLoadError("ov-sub", err); });
   }
 

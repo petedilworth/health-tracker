@@ -195,7 +195,7 @@ src/sleep/
 scripts/backfill.py, exclude_day.py, anomaly_report.py, validate_score.py,
          need_calibration.py
 run.py           # daily entry point
-tests/           # 68 tests, no network required
+tests/           # no network required
 ```
 
 `data/computed.csv` is derived and git-ignored — it is regenerated from

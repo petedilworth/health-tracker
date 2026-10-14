@@ -454,3 +454,15 @@ def test_overview_carries_the_bedtime_game():
     assert len(game["bests"]) == 3
     assert game["line"]["floor"] == 22.25
     assert 'id="game"' in site._overview_page()
+
+
+def test_stats_day_is_the_last_night_with_a_value_not_the_last_row():
+    # A partial day (score posted, session not yet) leaves a trailing row with
+    # no HRV. The page's "last night" must be the last row WITH a value.
+    d = DAILY.copy()
+    d.loc[d.index[-1], ["hrv", "total_sleep_h", "bedtime"]] = np.nan
+    p = site.metric_payload(d, _spec("hrv"))
+    ci = {c: i for i, c in enumerate(p["meta"]["series_cols"])}
+    assert p["series"][-1][0] == d.index[-1].strftime("%Y-%m-%d")
+    assert p["series"][-1][ci["v"]] is None
+    assert p["stats"]["day"] == d.index[-2].strftime("%Y-%m-%d")

@@ -77,10 +77,11 @@
   // Before this hour, "today" means yesterday: at 1am you may not have slept
   // yet, and the strip must not claim last night is missing.
   var NEW_DAY_HOUR = 6;
-  // Four runs a day: the largest healthy gap is the 11h from 11:23pm to
-  // 10:23am, plus up to ~10h of queue jitter. At 30h the banner still catches a
-  // genuinely dead pipeline inside a day and a half without crying wolf.
-  var STALE_BUILD_HOURS = 30;
+  // One scheduled run a day, which GitHub starts 5 to 9 hours late (observed
+  // 2026-10-11 to 10-13), so two healthy builds can be 24h apart plus the
+  // difference in lateness. 40h leaves room for that and still catches a dead
+  // pipeline inside two days without crying wolf.
+  var STALE_BUILD_HOURS = 40;
 
   function niceDate(iso) {
     if (!iso) return "—";
@@ -268,7 +269,6 @@
   // never sees the second finger as the start of a one-finger pan. One finger
   // is left alone: Plotly pans with it, and .chart's touch-action lets a
   // vertical swipe scroll the page as usual.
-  var DAY_MS = 864e5;
   function enablePinch(gd) {
     if (gd._pinchWired) return;
     gd._pinchWired = true;
@@ -544,7 +544,11 @@
     // The component table for the chosen night. Kept for the last year; the
     // prose is the same for every night.
     var night = isLatest ? null : (ex.days || {})[iso];
-    var tooOld = !isLatest && !night;
+    // No entry inside the kept year means nothing was recorded that night;
+    // before the kept year it simply is not shipped.
+    var kept = Object.keys(ex.days || {}).sort();
+    var tooOld = !isLatest && !night && (!kept.length || iso < kept[0]);
+    var noNight = !isLatest && !night && !tooOld;
     // Confidence gets its own headed column: a bare "high" beside a bedtime
     // reads as a rating of the value, which is the misread being fixed.
     var head = isScore
@@ -572,6 +576,9 @@
     var table = tooOld
       ? "<p class='sub'>The night-by-night breakdown is kept for the last year; " +
         niceDate(iso) + " is older than that, so the table is not shown.</p>"
+      : noNight
+      ? "<p class='sub'>Nothing was recorded on " + niceDate(iso) +
+        ", so there is no breakdown for that night.</p>"
       : "<div class='scroll-x'><table class='comps'>" + head + rows + "</table></div>";
     return "<h2>How it's calculated</h2>" +
       paras.map(function (p) { return "<p>" + p + "</p>"; }).join("") +
@@ -729,8 +736,11 @@
   function initMetric() {
     fetchJSON(P.root + "/data/m/" + P.slug + ".json").then(function (payload) {
       renderFreshness(payload.fresh);
+      // The series runs to the end of the daily frame, which on a partial day
+      // (score posted, session not yet) is a row with no value for a measured
+      // metric. "Last night" is the last row WITH a value, which is stats.day.
       var days = seriesCol(payload, "day") || [];
-      var first = days[0], last = days[days.length - 1];
+      var first = days[0], last = (payload.stats && payload.stats.day) || days[days.length - 1];
       var nav = daynav(el("daynav"), first, last, function (iso, isLatest) {
         renderNight(payload, iso, isLatest);
       });
@@ -849,7 +859,7 @@
       if (partial) {
         var miss = (partial.missing || []).indexOf("hrv") >= 0
           ? "duration, HRV and timing" : "the detail behind it";
-        el("ov-sub").insertAdjacentHTML("afterend",
+        (el("daynav") || el("ov-sub")).insertAdjacentHTML("afterend",
           '<div class="partialbox">' + niceDate(partial.day) +
           " is partial. Oura has posted a score of " + Math.round(partial.oura_score) +
           " but has not released the session yet, so " + miss +

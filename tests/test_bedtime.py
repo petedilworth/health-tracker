@@ -75,7 +75,7 @@ def test_line_moves_after_two_qualifying_weeks_and_stops_at_the_floor():
     # Hitting every week walks it to the floor and no further.
     out = bedtime.moving_line(_frame([22.0] * 7 * 12))
     assert out["line"] == bedtime.LINE_FLOOR_H and out["next"] is None
-    assert len(out["moves"]) == 3
+    assert len(out["moves"]) == 3 and out["banked"] == 0
 
 
 def test_line_reports_the_week_in_progress():

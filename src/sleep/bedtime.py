@@ -164,6 +164,8 @@ def moving_line(daily: pd.DataFrame) -> dict:
             k += 1
 
     at_floor = line <= LINE_FLOOR_H + 1e-9
+    if at_floor:
+        banked = 0        # nothing left to bank toward
     return {
         "line": line,
         "floor": LINE_FLOOR_H,

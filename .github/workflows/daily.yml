@@ -60,9 +60,21 @@ jobs:
           if git diff --cached --quiet; then
             echo "No changes to commit."
           else
-            # Eastern, not UTC: the late run fires after midnight UTC, so a UTC
-            # stamp would misdate it. The time is included because four runs a
-            # day would otherwise produce four identically-worded commits.
+            # Eastern, not UTC, so the stamp matches the day you experienced.
+            # The time is included because a manual run and the scheduled one
+            # would otherwise produce identically-worded commits.
             git commit -m "data: update ($(TZ=America/New_York date '+%Y-%m-%d %H:%M') ET)"
-            git push
+            # Two runs can overlap (a manual run while the scheduled one is in
+            # flight: it happened on 2026-10-11 and the second push was
+            # rejected, failing the run). On rejection, fetch and rebase our
+            # commit on top; both runs regenerate the same whole files from the
+            # same source, so on a conflict our copy (-X theirs during a
+            # rebase) is the right one. Three tries, then fail loudly.
+            for attempt in 1 2 3; do
+              if git push; then exit 0; fi
+              echo "push rejected (attempt $attempt); rebasing onto origin/main"
+              git fetch origin main
+              git rebase -X theirs origin/main || { git rebase --abort; exit 1; }
+            done
+            echo "could not push after 3 attempts"; exit 1
           fi

@@ -40,6 +40,26 @@ h2 { font-size: 15px; }
 .nav a { color: var(--ink-2); font-size: 13px; }
 .nav a:hover { color: var(--ink); text-decoration: none; }
 .nav .brand { color: var(--ink); font-weight: 700; font-size: 15px; margin-right: 6px; }
+.nav .signout { margin-left: auto; color: var(--muted); font-size: 12.5px; }
+
+/* Sign-in page: the only page served before you sign in. */
+.login { max-width: 380px; padding-top: 12vh; }
+/* .login form sets display:flex, which would beat the hidden attribute. */
+.login [hidden] { display: none; }
+.login form { display: flex; flex-direction: column; gap: 8px; margin-top: 22px; }
+.login label { font-size: 13px; color: var(--ink-2); font-weight: 600; }
+.login input {
+  background: var(--surface); border: 1px solid var(--grid); border-radius: 8px;
+  color: var(--ink); font: 16px system-ui, sans-serif; padding: 10px 12px;
+}
+.login input:focus { outline: none; border-color: var(--blue); }
+.login button {
+  background: var(--blue); color: #fff; border: 0; border-radius: 8px;
+  font: 600 15px system-ui, sans-serif; padding: 11px 12px; cursor: pointer;
+}
+.loginbox { background: var(--surface); border: 1px solid var(--grid);
+  border-radius: var(--radius); padding: 14px 16px; margin-top: 22px; color: var(--ink-2); }
+.loginerr { color: var(--red); font-size: 13px; margin: 0; }
 
 .wrap { max-width: 1080px; margin: 0 auto; padding: 20px 16px 40px; }
 .pagehead { margin: 6px 0 16px; }

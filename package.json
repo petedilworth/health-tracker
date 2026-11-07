@@ -1,0 +1,11 @@
+{
+  "name": "health-tracker-gate",
+  "private": true,
+  "type": "module",
+  "description": "Only the sign-in gate (middleware.ts) for the Vercel deployment. The site itself is built by Python into docs/.",
+  "dependencies": {
+    "@supabase/ssr": "^0.12.7",
+    "@supabase/supabase-js": "^2.119.0",
+    "@vercel/functions": "^3.11.0"
+  }
+}

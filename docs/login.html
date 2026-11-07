@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<link rel="icon" href="data:,">
+<title>Sign in · Sleep Analytics</title>
+<link rel="stylesheet" href="/assets/site.css">
+</head>
+<body>
+<main class="wrap login">
+  <h1>Sleep Analytics</h1>
+  <p class="sub">Private. Sign in with the email on the list.</p>
+  <p class="loginbox" id="sent" hidden>If that email is on the list, a sign-in link is on its way.
+    It works once, for an hour, in this browser.</p>
+  <form method="post" action="/login" id="loginform">
+    <label for="email">Email</label>
+    <input id="email" name="email" type="email" autocomplete="email" inputmode="email" required>
+    <p class="loginerr" id="err" hidden></p>
+    <button type="submit">Email me a sign-in link</button>
+  </form>
+</main>
+<script>
+(function () {
+  var q = new URLSearchParams(location.search), msgs = {"email": "That doesn't look like an email address.", "slow": "Too many tries. Wait a minute and try again.", "link": "That sign-in link has expired or was already used. Ask for a new one.", "denied": "That email can't see this site. Sign in with the one on its list."};
+  if (q.get("sent") === "1") {
+    document.getElementById("sent").hidden = false;
+    document.getElementById("loginform").hidden = true;
+  }
+  var e = msgs[q.get("error")];
+  if (e) { var el = document.getElementById("err"); el.textContent = e; el.hidden = false; }
+})();
+</script>
+</body>
+</html>

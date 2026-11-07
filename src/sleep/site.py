@@ -1,4 +1,4 @@
-"""Static site generator: computed frame -> docs/ for GitHub Pages.
+"""Static site generator: computed frame -> docs/, served by Vercel behind middleware.ts.
 
 Python does all the shaping (formatting rules, percentile direction, aggregates,
 top/bottom lists, distributions, component breakdowns) so the browser-side JS
@@ -768,6 +768,7 @@ def _shell(title: str, body: str, root: str) -> str:
   <a class="brand" href="{root}/index.html">Sleep</a>
   <a href="{root}/index.html">Overview</a>
   <a href="{root}/metrics/index.html">All metrics</a>
+  <a class="signout" href="/auth/signout">Sign out</a>
 </nav>
 <div class="stalebar" id="stalebar">checking whether last night is in…</div>
 {body}
@@ -880,16 +881,72 @@ def _all_metrics_page(daily: pd.DataFrame) -> str:
     return _shell("All metrics · Sleep Analytics", body, "..")
 
 
+# Wording follows the car-price site's sign-in page, which uses the same
+# Supabase project and the same flow.
+LOGIN_MESSAGES = {
+    "email": "That doesn't look like an email address.",
+    "slow": "Too many tries. Wait a minute and try again.",
+    "link": "That sign-in link has expired or was already used. Ask for a new one.",
+    "denied": "That email can't see this site. Sign in with the one on its list.",
+}
+
+
+def _login_page() -> str:
+    """The one page served to people who are not signed in.
+
+    Standalone on purpose: no stale bar, no Plotly, no app.js, because the
+    gate (middleware.ts) lets only this page and its stylesheet through until
+    you sign in. The form posts to /login, which the gate handles.
+    """
+    messages = json.dumps(LOGIN_MESSAGES)
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<link rel="icon" href="data:,">
+<title>Sign in · Sleep Analytics</title>
+<link rel="stylesheet" href="/assets/site.css">
+</head>
+<body>
+<main class="wrap login">
+  <h1>Sleep Analytics</h1>
+  <p class="sub">Private. Sign in with the email on the list.</p>
+  <p class="loginbox" id="sent" hidden>If that email is on the list, a sign-in link is on its way.
+    It works once, for an hour, in this browser.</p>
+  <form method="post" action="/login" id="loginform">
+    <label for="email">Email</label>
+    <input id="email" name="email" type="email" autocomplete="email" inputmode="email" required>
+    <p class="loginerr" id="err" hidden></p>
+    <button type="submit">Email me a sign-in link</button>
+  </form>
+</main>
+<script>
+(function () {{
+  var q = new URLSearchParams(location.search), msgs = {messages};
+  if (q.get("sent") === "1") {{
+    document.getElementById("sent").hidden = false;
+    document.getElementById("loginform").hidden = true;
+  }}
+  var e = msgs[q.get("error")];
+  if (e) {{ var el = document.getElementById("err"); el.textContent = e; el.hidden = false; }}
+}})();
+</script>
+</body>
+</html>"""
+
+
 def _not_found_page() -> str:
-    """GitHub Pages serves this at any depth, so it needs absolute paths."""
+    """Served at any depth, so it uses absolute paths from the site root."""
     body = """
 <main class="wrap">
   <header class="pagehead"><h1>Page not found</h1>
     <p class="sub">That URL doesn't exist here.</p></header>
-  <p><a href="/health-tracker/index.html">← Back to the overview</a></p>
+  <p><a href="/index.html">← Back to the overview</a></p>
 </main>
 <script>window.PAGE = {type: "none"};</script>"""
-    return _shell("Not found · Sleep Analytics", body, "/health-tracker")
+    return _shell("Not found · Sleep Analytics", body, "")
 
 
 # --- build -------------------------------------------------------------------
@@ -923,4 +980,5 @@ def build_site(daily: pd.DataFrame, summary: dict) -> None:
     (docs / "robots.txt").write_text("User-agent: *\nDisallow: /\n",
                                      encoding="utf-8")
     (docs / "404.html").write_text(_not_found_page(), encoding="utf-8")
+    (docs / "login.html").write_text(_login_page(), encoding="utf-8")
     log.info("Site built -> %s (%d metric pages)", docs, len(PAGES))

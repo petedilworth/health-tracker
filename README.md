@@ -7,28 +7,28 @@ and a daily email, all automated through GitHub Actions.
 > **Build status: Stages 1–3 complete (data layer, metrics engine, website).**
 > Stage 4 (daily email) is not yet built; the website is the delivery channel.
 >
-> **Live site: https://petedilworth.github.io/health-tracker/**
+> **Live site:** the Vercel address from the Deploying steps below. Sign in with your email.
 
-## What's public
+## Who can see it
 
-This repository is public so GitHub Pages can serve the dashboard — Pages
-cannot serve a private repo without GitHub Pro, and even then the published
-site is public regardless (access-controlled Pages is Enterprise-only). So
-being public is the price of a viewable site, and it was chosen deliberately.
+Only you. The repository is private, and the site is hosted on Vercel behind a
+sign-in gate (`middleware.ts`) that runs before every request, so no page and
+no data file is served until you have signed in.
 
-**Public:** everything in this repo and its history — the full nightly history
-in `data/history.csv`, the exclusions list, the site's JSON payloads (which
-contain every nightly value), the code, and all commit messages. Workflow run
-logs are public too, though secrets are masked.
+Sign-in is an email link through Supabase, the same project and the same flow
+as the car-price site: enter your email, tap the link it sends. Supabase only
+creates accounts for emails on its allow list, and because that list is shared
+with car-price, the gate also checks its own list, `ALLOWED_EMAILS`, before
+letting anyone see health data. If its settings are missing, the gate serves
+nothing at all.
 
-**Not public:** `OURA_PAT`, `RESEND_API_KEY` and `MAIL_TO` live in GitHub
-Actions secrets, which stay private on a public repo and never appear in logs.
-The git history has been scanned and contains no credentials.
+Until November 2026 the repository was public and the site was on GitHub
+Pages, so the history up to then was readable by anyone with the address. No
+one forked the repository, but copies fetched before the switch cannot be
+recalled.
 
-The site carries `<meta name="robots" content="noindex">` on every page plus a
-`Disallow: /` robots.txt, so search engines skip it — but anyone with the URL
-can read it. Reverting to private later would not un-publish anything already
-retrieved.
+**Secrets** (`OURA_PAT`, `RESEND_API_KEY`, `MAIL_TO`) live in GitHub Actions
+secrets. The Supabase settings live in the Vercel project. None is committed.
 
 ## Why this exists
 
@@ -84,6 +84,39 @@ from the GitHub mobile app).
 | **Anomaly report** | Builds a review queue of suspicious nights into [`docs/review/anomalies.md`](docs/review/anomalies.md), with surrounding nights for context. |
 | **Exclude a day** | Removes bad nights from every metric. Accepts several comma-separated dates. Set `action: include` to restore them. |
 | **Recalibration review** | Opens an issue each 1 March with the sleep-need baseline comparison, so that judgement call gets re-argued against current data. |
+
+## Deploying (one time, about 15 minutes)
+
+The Python job builds the site into `docs/` and commits it; Vercel serves
+`docs/` and redeploys on every push to `main`. Do these in order, so the site
+is never down and never half-private.
+
+1. **Import into Vercel.** On vercel.com click **Add New…**, then **Project**,
+   and import `health-tracker`. Not listed? Click **Adjust GitHub App
+   Permissions**, add `health-tracker`, save, come back. Framework Preset:
+   **Other**. Leave the build settings alone; `vercel.json` sets them.
+2. **Add three Environment Variables** before the first deploy:
+   - `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY`: copy the values from the
+     car-price project on Vercel (Settings, Environment Variables), where
+     they are called `NEXT_PUBLIC_SUPABASE_URL` and
+     `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`.
+   - `ALLOWED_EMAILS`: your email. Several are allowed, separated by commas.
+   Click **Deploy**, wait for it to finish, and copy the address under
+   **Domains**, for example `https://health-tracker-abc.vercel.app`.
+3. **Tell Supabase the address.** In the car-price Supabase project:
+   **Authentication**, **URL Configuration**, **Redirect URLs**, **Add URL**:
+   the address followed by `/auth/confirm`. Save. Do not change Site URL;
+   car-price needs it.
+4. **Sign in.** Open the address, enter your email, open the email in the same
+   browser and tap the link. Check the overview and a metric page load.
+5. **Make the repository private.** GitHub, `health-tracker`, **Settings**,
+   **General**, **Danger Zone**, **Change visibility**, **Private**. GitHub
+   Pages stops serving the old address.
+6. **Check the daily update reaches the site.** **Actions**, **Daily Sleep
+   Analytics**, **Run workflow**. A minute later Vercel's **Deployments** tab
+   should show a new deployment. The workflows commit as you, not as the
+   GitHub bot, because Vercel's free plan will not deploy a private repo's
+   commit from anyone else.
 
 ## Data quality
 
@@ -154,7 +187,7 @@ that actually discriminates.
 
 ## The website
 
-Generated into `docs/` on every run and served by GitHub Pages: a dark,
+Generated into `docs/` on every run and served by Vercel behind the sign-in gate: a dark,
 data-dense overview (eight headline cards, health-flag banner, sleep-score
 chart) plus a deep-dive page per metric — interactive Plotly charts with
 Daily/Weekly/Quarterly/Annual views, range buttons, pinch-to-zoom on phones, best/worst-10 lists
@@ -191,7 +224,8 @@ src/sleep/
   score.py       # sleep score, need, debt, performance, readiness
   flags.py       # combined health flag
   compute.py     # full metric pipeline -> data/computed.csv
-  site.py        # static site generator -> docs/
+  site.py        # static site generator -> docs/ (served by Vercel)
+middleware.ts    # sign-in gate in front of the whole site (Vercel)
 scripts/backfill.py, exclude_day.py, anomaly_report.py, validate_score.py,
          need_calibration.py
 run.py           # daily entry point

@@ -18,3 +18,7 @@ Thumbs.db
 
 # Derived — regenerated every run from history.csv + exclusions.csv
 data/computed.csv
+
+# Vercel gate (middleware.ts)
+node_modules/
+.vercel/

@@ -18,8 +18,9 @@ on:
     # hand right after, so the later attempts only ever re-fetched what the
     # manual run had already landed. One scheduled attempt for the mornings
     # nobody remembers; workflow_dispatch for the rest. Re-runs are harmless:
-    # the 30-day lookback plus field-wise upsert makes them idempotent, and
-    # public-repo Actions minutes are not billed.
+    # the 30-day lookback plus field-wise upsert makes them idempotent, and a
+    # run takes about a minute against the private repo's 2,000 free
+    # Actions minutes a month.
     #
     # (The days-long "last night is missing" problem of early September was
     # our own end_date bug, fixed in ingest.py, not the schedule.)
@@ -54,8 +55,12 @@ jobs:
 
       - name: Commit updated data & site
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          # Commit as the repo owner, not github-actions[bot]: Vercel's free
+          # plan refuses to deploy a private repo's commit whose author is not
+          # the account owner, and the site would silently stop updating.
+          # This is GitHub's public no-reply address for the account.
+          git config user.name "petedilworth"
+          git config user.email "38577314+petedilworth@users.noreply.github.com"
           git add data/ docs/
           if git diff --cached --quiet; then
             echo "No changes to commit."

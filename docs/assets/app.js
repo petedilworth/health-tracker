@@ -195,10 +195,13 @@
     }
   }
   function fetchJSON(path) {
-    // GitHub Pages serves JSON with max-age=600 and offers no way to change
-    // it. A freshness strip computed from cached JSON would confidently report
-    // the wrong day, so bypass the HTTP cache for data.
+    // The data must never come from a browser or proxy cache: a freshness
+    // strip computed from cached JSON would confidently report the wrong day.
+    // (The host also sends Cache-Control: private, no-cache; see vercel.json.)
     return fetch(path, { cache: "no-store" }).then(function (r) {
+      // 401: the sign-in expired while the page was open. Go and sign in
+      // rather than showing a load error.
+      if (r.status === 401) { location.href = "/login.html"; throw new Error("signed out"); }
       if (!r.ok) throw new Error("fetch failed: " + path);
       return r.json();
     });

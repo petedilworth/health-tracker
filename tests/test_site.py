@@ -466,3 +466,69 @@ def test_stats_day_is_the_last_night_with_a_value_not_the_last_row():
     assert p["series"][-1][0] == d.index[-1].strftime("%Y-%m-%d")
     assert p["series"][-1][ci["v"]] is None
     assert p["stats"]["day"] == d.index[-2].strftime("%Y-%m-%d")
+
+
+# --- private hosting: Vercel behind the sign-in gate --------------------------
+
+REPO = Path(__file__).resolve().parents[1]
+
+
+def test_login_page_is_standalone_and_posts_to_the_gate(tmp_path, monkeypatch):
+    monkeypatch.setattr(site.config, "DOCS_DIR", tmp_path)
+    site.build_site(DAILY, SUMMARY)
+    html = (tmp_path / "login.html").read_text()
+    assert 'action="/login"' in html and 'name="email"' in html
+    # The gate only lets this page and site.css through before sign-in.
+    assert "app.js" not in html and "plotly" not in html
+    assert 'href="/assets/site.css"' in html
+    for key in site.LOGIN_MESSAGES:
+        assert key in html
+
+
+def test_every_page_offers_sign_out(tmp_path, monkeypatch):
+    monkeypatch.setattr(site.config, "DOCS_DIR", tmp_path)
+    site.build_site(DAILY, SUMMARY)
+    for page in ("index.html", "metrics/hrv.html", "metrics/index.html", "404.html"):
+        assert 'href="/auth/signout"' in (tmp_path / page).read_text(), page
+
+
+def test_not_found_page_uses_root_paths():
+    html = site._not_found_page()
+    assert "/health-tracker/" not in html
+    assert 'href="/assets/site.css"' in html
+
+
+def test_committing_workflows_commit_as_the_owner():
+    """Vercel's free plan will not deploy a private repo's commit by anyone but
+    the owner, so a bot-authored data commit would silently stop the site."""
+    for wf in (REPO / ".github" / "workflows").glob("*.yml"):
+        text = wf.read_text()
+        if "git commit" not in text:
+            continue
+        assert "github-actions[bot]@users.noreply.github.com" not in text, wf.name
+        assert "38577314+petedilworth@users.noreply.github.com" in text, wf.name
+
+
+def test_vercel_serves_docs_with_no_build_step():
+    cfg = json.loads((REPO / "vercel.json").read_text())
+    assert cfg["outputDirectory"] == "docs"
+    assert cfg["buildCommand"] == "" and cfg["framework"] is None
+
+
+def test_gate_helpers_and_fail_closed_behaviour():
+    """Builds middleware.ts and runs tests/middleware.test.mjs under node."""
+    import shutil
+    import subprocess
+    if not shutil.which("node") or not (REPO / "node_modules" / "@supabase").exists():
+        pytest.skip("node or the gate's npm dependencies are not installed")
+    bundle = REPO / "node_modules" / ".cache" / "gate.mjs"
+    bundle.parent.mkdir(parents=True, exist_ok=True)
+    build = subprocess.run(
+        ["npx", "--yes", "esbuild@0.24.0", "middleware.ts", "--bundle",
+         "--platform=node", "--format=esm", "--packages=external",
+         f"--outfile={bundle}"], cwd=REPO, capture_output=True, text=True)
+    assert build.returncode == 0, build.stderr
+    run = subprocess.run(["node", "--test", "tests/middleware.test.mjs"], cwd=REPO,
+                         capture_output=True, text=True,
+                         env={**__import__("os").environ, "GATE_BUNDLE": str(bundle)})
+    assert run.returncode == 0, run.stdout[-2000:] + run.stderr[-2000:]
